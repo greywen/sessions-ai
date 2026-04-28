@@ -366,6 +366,8 @@ const en: Dict = {
   // Pricing
   'pricing.title': 'Pricing Management',
   'pricing.addNew': 'Add Pricing',
+  'pricing.sync': 'Sync OpenRouter',
+  'pricing.syncing': 'Syncing...',
   'pricing.submitting': 'Submitting...',
   'pricing.deleting': 'Deleting...',
   'pricing.col.model': 'Model',
@@ -392,6 +394,10 @@ const en: Dict = {
   'pricing.toast.created': 'Pricing record created',
   'pricing.toast.updated': 'Pricing record updated',
   'pricing.toast.deleted': 'Pricing record deleted',
+  'pricing.badge.manualLocked': 'Manual override',
+  'pricing.badge.synced': 'Synced',
+  'pricing.sync.toast.success': 'Sync complete: +{inserted} new, {updated} updated, {skippedLocked} locked',
+  'pricing.sync.toast.failed': 'OpenRouter sync failed',
 
   // Session blocks
   'block.thinking': 'Thinking',
@@ -765,6 +771,8 @@ const zh: Dict = {
   // Pricing
   'pricing.title': '价格表管理',
   'pricing.addNew': '新增定价',
+  'pricing.sync': '同步 OpenRouter',
+  'pricing.syncing': '同步中…',
   'pricing.submitting': '提交中…',
   'pricing.deleting': '删除中…',
   'pricing.col.model': '模型',
@@ -791,6 +799,10 @@ const zh: Dict = {
   'pricing.toast.created': '已创建价格记录',
   'pricing.toast.updated': '已更新价格记录',
   'pricing.toast.deleted': '已删除价格记录',
+  'pricing.badge.manualLocked': '手动锁定',
+  'pricing.badge.synced': '已同步',
+  'pricing.sync.toast.success': '同步完成：新增 {inserted} 条，更新 {updated} 条，跳过锁定 {skippedLocked} 条',
+  'pricing.sync.toast.failed': 'OpenRouter 同步失败',
 
   // Blocks
   'block.thinking': '思考过程',

@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { normalizedMessages, machines, pricingTable, dailyStats } from '@/lib/db/schema';
 import { logger } from '@/lib/logger';
 import { sql } from 'drizzle-orm';
 
@@ -27,7 +26,7 @@ export async function POST(request: Request) {
 
     // Perform aggregation:FROM normalized_messages Aggregate to daily_stats
     // Cost Formula:(input_tokens/1M × input_price) + (output_tokens/1M × output_price) + (cache_tokens/1M × cache_price)
-    const result = await db.execute(sql`
+    await db.execute(sql`
       INSERT INTO daily_stats (day, machine_id, owner_id, source_tool, model,
         message_count, session_count, total_input_tokens, total_output_tokens,
         total_cache_tokens, estimated_cost_usd)
@@ -45,23 +44,9 @@ export async function POST(request: Request) {
           COALESCE((nm.usage->>'cacheCreationInputTokens')::bigint, 0) +
           COALESCE((nm.usage->>'cacheReadInputTokens')::bigint, 0)
         ), 0) AS total_cache_tokens,
-        COALESCE(SUM(
-          (nm.usage->>'inputTokens')::numeric / 1000000 * COALESCE(p.input_price_per_mtok, 0) +
-          (nm.usage->>'outputTokens')::numeric / 1000000 * COALESCE(p.output_price_per_mtok, 0) +
-          (
-            COALESCE((nm.usage->>'cacheCreationInputTokens')::numeric, 0) +
-            COALESCE((nm.usage->>'cacheReadInputTokens')::numeric, 0)
-          ) / 1000000 * COALESCE(p.cache_price_per_mtok, 0)
-        ), 0) AS estimated_cost_usd
+        COALESCE(SUM(nm.cost_usd), 0) AS estimated_cost_usd
       FROM normalized_messages nm
       JOIN machines m ON nm.machine_id = m.id
-      LEFT JOIN LATERAL (
-        SELECT * FROM pricing_table pt
-        WHERE pt.model = nm.usage->>'model'
-          AND pt.effective_from <= nm.raw_timestamp::date
-          AND (pt.effective_to IS NULL OR pt.effective_to >= nm.raw_timestamp::date)
-        ORDER BY pt.effective_from DESC LIMIT 1
-      ) p ON true
       WHERE nm.created_at >= CURRENT_DATE
         AND nm.usage IS NOT NULL
         AND nm.usage->>'model' IS NOT NULL

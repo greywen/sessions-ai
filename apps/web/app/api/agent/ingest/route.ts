@@ -6,6 +6,7 @@ import { normalizedMessages, rawEvents } from '@/lib/db/schema';
 import { authenticateAgent, isAgentContext } from '@/lib/auth/agent-auth';
 import { logger } from '@/lib/logger';
 import { createHash } from 'crypto';
+import { computeCostFor, loadPricingForBatch, type UsageJson } from '@/lib/cost/compute';
 
 // MESSAGE payload schema
 const contentBlockSchema = z.object({
@@ -99,22 +100,41 @@ export async function POST(request: Request) {
     // 4. Bulk insert normalized_messages.
     // The same message id may be reported multiple times due to CRDT streaming
     // completion; use ON CONFLICT for idempotent updates.
+    //
+    // Pricing materialization: for each batch we load all pricing rows that
+    // could possibly match any of the batch's models in one query, then
+    // compute `cost_usd` + `pricing_id` per message in TS (see
+    // lib/cost/compute.ts). Reads no longer need to JOIN pricing_table.
     let accepted = 0;
     const batchSize = 50;
     for (let i = 0; i < messages.length; i += batchSize) {
       const batch = messages.slice(i, i + batchSize);
-      const values = batch.map((m) => ({
-        id: m.id,
-        sessionId: m.sessionId,
-        parentId: m.parentId ?? null,
-        machineId: machine.id,
-        sourceTool: m.sourceTool,
-        role: m.role,
-        contentBlocks: m.contentBlocks,
-        usage: m.usage ?? null,
-        rawTimestamp: new Date(m.timestamp),
-        metadata: m.metadata ?? {},
-      }));
+      const pricings = await loadPricingForBatch(
+        db,
+        batch.map((m) => ({ usage: (m.usage ?? null) as UsageJson | null })),
+      );
+      const values = batch.map((m) => {
+        const ts = new Date(m.timestamp);
+        const { costUsd, pricingId } = computeCostFor(
+          (m.usage ?? null) as UsageJson | null,
+          ts,
+          pricings,
+        );
+        return {
+          id: m.id,
+          sessionId: m.sessionId,
+          parentId: m.parentId ?? null,
+          machineId: machine.id,
+          sourceTool: m.sourceTool,
+          role: m.role,
+          contentBlocks: m.contentBlocks,
+          usage: m.usage ?? null,
+          costUsd,
+          pricingId,
+          rawTimestamp: ts,
+          metadata: m.metadata ?? {},
+        };
+      });
 
       try {
         await db
@@ -129,6 +149,8 @@ export async function POST(request: Request) {
               role: sql`excluded.role`,
               contentBlocks: sql`excluded.content_blocks`,
               usage: sql`excluded.usage`,
+              costUsd: sql`excluded.cost_usd`,
+              pricingId: sql`excluded.pricing_id`,
               rawTimestamp: sql`excluded.raw_timestamp`,
               metadata: sql`excluded.metadata`,
             },
@@ -153,6 +175,8 @@ export async function POST(request: Request) {
                   role: sql`excluded.role`,
                   contentBlocks: sql`excluded.content_blocks`,
                   usage: sql`excluded.usage`,
+                  costUsd: sql`excluded.cost_usd`,
+                  pricingId: sql`excluded.pricing_id`,
                   rawTimestamp: sql`excluded.raw_timestamp`,
                   metadata: sql`excluded.metadata`,
                 },

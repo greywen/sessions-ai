@@ -14,7 +14,10 @@
     "service:print:agent": "pnpm --filter agent service:print",
     "service:uninstall:agent": "pnpm --filter agent service:uninstall",
     "db:generate": "pnpm --filter web db:generate",
-    "db:migrate": "pnpm --filter web db:migrate"
+    "db:migrate": "pnpm --filter web db:migrate",
+    "db:push": "pnpm --filter web db:push",
+    "db:reset": "pnpm --filter web db:reset",
+    "db:seed": "pnpm --filter web db:seed"
   },
   "devDependencies": {
     "prettier": "^3.5.3"

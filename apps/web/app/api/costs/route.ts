@@ -5,6 +5,7 @@ import { getSession } from '@/lib/auth/session';
 import { hasRole } from '@/lib/auth/roles';
 import { logger } from '@/lib/logger';
 import { sql } from 'drizzle-orm';
+import { nmUsageModelStripFirstExpr } from '@/lib/cost/pricing-sql';
 
 const dateStr = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Expect yyyy-MM-dd');
 const querySchema = z.object({
@@ -13,30 +14,10 @@ const querySchema = z.object({
   groupBy: z.enum(['user', 'device', 'tool', 'model']).default('tool'),
 });
 
-// TARIFF METERING SQL fragment(Multiple queries)
-const costExpr = sql`
-  COALESCE((nm.usage->>'inputTokens')::numeric, 0) / 1000000 * COALESCE(p.input_price_per_mtok, 0) +
-  COALESCE((nm.usage->>'outputTokens')::numeric, 0) / 1000000 * COALESCE(p.output_price_per_mtok, 0) +
-  (COALESCE((nm.usage->>'cacheCreationInputTokens')::numeric, 0) +
-   COALESCE((nm.usage->>'cacheReadInputTokens')::numeric, 0)
-  ) / 1000000 * COALESCE(p.cache_price_per_mtok, 0)
-`;
-
-// pricing LATERAL JOIN fragment(Compatible provider/model Format and dot/hyphen Difference)
-const pricingJoin = sql`
-  LEFT JOIN LATERAL (
-    SELECT input_price_per_mtok, output_price_per_mtok, cache_price_per_mtok
-    FROM pricing_table pt
-    WHERE (
-      pt.model = nm.usage->>'model'
-      OR pt.model = REGEXP_REPLACE(nm.usage->>'model', '^[^/]+/', '')
-      OR pt.model = REPLACE(REGEXP_REPLACE(nm.usage->>'model', '^[^/]+/', ''), '.', '-')
-    )
-      AND pt.effective_from <= nm.raw_timestamp::date
-      AND (pt.effective_to IS NULL OR pt.effective_to >= nm.raw_timestamp::date)
-    ORDER BY pt.effective_from DESC LIMIT 1
-  ) p ON true
-`;
+// 物化列：cost_usd 在 ingest 阶段已按 pricing 表结算并落库（见
+// lib/cost/compute.ts），读侧直接 SUM 即可，无需 JOIN pricing_table。
+const costExpr = sql`nm.cost_usd`;
+const pricingJoin = sql``;
 
 // GET /api/costs — Expense Summary(Direct from normalized_messages Real-time calculation,Do not rely on daily_stats Aggregation)
 export async function GET(request: Request) {
@@ -151,8 +132,8 @@ export async function GET(request: Request) {
           case 'model':
             return db.execute(sql`
               SELECT
-                REGEXP_REPLACE(nm.usage->>'model', '^[^/]+/', '') as id,
-                REGEXP_REPLACE(nm.usage->>'model', '^[^/]+/', '') as name,
+                ${nmUsageModelStripFirstExpr} as id,
+                ${nmUsageModelStripFirstExpr} as name,
                 COALESCE(SUM(${costExpr}), 0)::text as cost,
                 COALESCE(SUM(
                   COALESCE((nm.usage->>'inputTokens')::bigint, 0) +
@@ -164,7 +145,7 @@ export async function GET(request: Request) {
               WHERE nm.usage IS NOT NULL
                 AND nm.raw_timestamp >= ${rangeStartIso}
           AND nm.raw_timestamp <= ${rangeEndIso}
-              GROUP BY REGEXP_REPLACE(nm.usage->>'model', '^[^/]+/', '')
+              GROUP BY ${nmUsageModelStripFirstExpr}
               ORDER BY SUM(${costExpr}) DESC
               LIMIT 20
             `);
@@ -194,7 +175,7 @@ export async function GET(request: Request) {
       // 4. Model Distribution(For Ring Charts)
       db.execute(sql`
         SELECT
-          REGEXP_REPLACE(nm.usage->>'model', '^[^/]+/', '') as model,
+          ${nmUsageModelStripFirstExpr} as model,
           COALESCE(SUM(${costExpr}), 0)::text as cost,
           COALESCE(SUM(
             COALESCE((nm.usage->>'inputTokens')::bigint, 0) +
@@ -205,7 +186,7 @@ export async function GET(request: Request) {
         WHERE nm.usage IS NOT NULL
           AND nm.raw_timestamp >= ${rangeStartIso}
           AND nm.raw_timestamp <= ${rangeEndIso}
-        GROUP BY REGEXP_REPLACE(nm.usage->>'model', '^[^/]+/', '')
+        GROUP BY ${nmUsageModelStripFirstExpr}
         ORDER BY SUM(${costExpr}) DESC
       `),
 

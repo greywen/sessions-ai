@@ -728,7 +728,10 @@ describe('CopilotParser - 元数据/标题/Token 同步', () => {
     expect(asst.metadata.model).toBe('gpt-5.3');
   });
 
-  test('result.metadata.promptTokens / outputTokens 优先于 thinking 累加', async () => {
+  test('VS Code 不持久化 prompt/completion tokens：usage 始终为 null（即便 metadata 出现这些字段）', async () => {
+    // Even when (hypothetically) Copilot puts promptTokens/outputTokens in
+    // metadata, we no longer trust them — historic versions never wrote them
+    // and current versions still don't. Honest absence over fake numbers.
     const file = writeJsonl([
       {
         kind: 0,
@@ -758,12 +761,11 @@ describe('CopilotParser - 元数据/标题/Token 同步', () => {
     const p = new CopilotParser('m1');
     const r = await p.parseIncremental(file, 0);
     const asst = r.messages[1];
-    expect(asst.usage?.inputTokens).toBe(95551);
-    expect(asst.usage?.outputTokens).toBe(1076);
-    expect(asst.usage?.model).toBe('claude-opus-4-6');
+    expect(asst.usage).toBeNull();
+    expect(asst.metadata.model).toBe('claude-opus-4-6');
   });
 
-  test('result.metadata.toolCallRounds[*].thinking.tokens 累加到 usage.outputTokens', async () => {
+  test('toolCallRounds[*].thinking.tokens 累加到 metadata.thinkingTokens（不再伪装成 outputTokens）', async () => {
     const file = writeJsonl([
       {
         kind: 0,
@@ -777,6 +779,7 @@ describe('CopilotParser - 元数据/标题/Token 同步', () => {
               message: { text: 'q', parts: [] },
               response: [{ value: 'a' }],
               result: {
+                timings: { totalElapsed: 12345 },
                 metadata: {
                   resolvedModel: 'copilot/gpt-5.3-codex',
                   toolCallRounds: [
@@ -796,11 +799,10 @@ describe('CopilotParser - 元数据/标题/Token 同步', () => {
     const p = new CopilotParser('m1');
     const r = await p.parseIncremental(file, 0);
     const asst = r.messages[1];
-    expect(asst.usage).not.toBeNull();
-    expect(asst.usage?.outputTokens).toBe(100);
-    expect(asst.usage?.inputTokens).toBe(0);
-    expect(asst.usage?.model).toBe('copilot/gpt-5.3-codex');
-    // resolvedModel takes priority over modelId
+    expect(asst.usage).toBeNull();
+    expect(asst.metadata.thinkingTokens).toBe(100);
+    expect(asst.metadata.elapsedMs).toBe(12345);
+    expect(asst.metadata.toolCallRoundCount).toBe(4);
     expect(asst.metadata.model).toBe('copilot/gpt-5.3-codex');
   });
 

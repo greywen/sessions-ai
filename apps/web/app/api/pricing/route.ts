@@ -6,6 +6,7 @@ import { getSession } from '@/lib/auth/session';
 import { hasRole } from '@/lib/auth/roles';
 import { logger } from '@/lib/logger';
 import { eq, desc } from 'drizzle-orm';
+import { ensurePricingSyncSchema } from '@/lib/db/pricing-sync-schema';
 
 // Buat/Update pricing history schema
 const pricingSchema = z.object({
@@ -28,6 +29,8 @@ export async function GET() {
     if (!hasRole(session.role, 'admin')) {
       return NextResponse.json({ error: 'Insufficient Permissions' }, { status: 403 });
     }
+
+    await ensurePricingSyncSchema();
 
     const list = await db
       .select()
@@ -53,10 +56,22 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Insufficient Permissions' }, { status: 403 });
     }
 
+    await ensurePricingSyncSchema();
+
     const body = await request.json();
     const data = pricingSchema.parse(body);
 
-    const [newRecord] = await db
+    const existingModel = await db.query.pricingTable.findFirst({
+      where: eq(pricingTable.model, data.model),
+    });
+    if (existingModel) {
+      return NextResponse.json(
+        { error: `Model "${data.model}" already exists. Model name must be unique.` },
+        { status: 409 },
+      );
+    }
+
+    const [savedRecord] = await db
       .insert(pricingTable)
       .values({
         model: data.model,
@@ -66,27 +81,58 @@ export async function POST(request: Request) {
         cachePricePerMtok: data.cachePricePerMtok ?? null,
         effectiveFrom: data.effectiveFrom,
         effectiveTo: data.effectiveTo ?? null,
+        syncSource: 'manual',
+        syncLocked: true,
+        lastSyncedAt: null,
       })
       .returning();
 
-    // Audit Logging
-    await db.insert(auditLogs).values({
-      userId: session.userId,
-      action: 'pricing_create',
-      targetType: 'pricing',
-      targetId: newRecord.id,
-      details: { model: data.model, provider: data.provider },
-    });
+    let auditLogged = false;
+    try {
+      await db.insert(auditLogs).values({
+        userId: session.userId,
+        action: 'pricing_create',
+        targetType: 'pricing',
+        targetId: savedRecord.id,
+        details: {
+          model: data.model,
+          provider: data.provider,
+          effectiveFrom: data.effectiveFrom,
+        },
+      });
+      auditLogged = true;
+    } catch (auditError) {
+      logger.warn(
+        {
+          userId: session.userId,
+          error: auditError instanceof Error ? { name: auditError.name, message: auditError.message } : String(auditError),
+        },
+        'Pricing table create audit log failed',
+      );
+    }
 
     logger.info(
-      { model: data.model, provider: data.provider, userId: session.userId },
+      { model: data.model, provider: data.provider, userId: session.userId, auditLogged },
       'Pricing Table New Record',
     );
 
-    return NextResponse.json({ data: newRecord }, { status: 201 });
+    return NextResponse.json(
+      {
+        data: savedRecord,
+        auditLogged,
+      },
+      { status: 201 },
+    );
   } catch (error) {
     if (error instanceof z.ZodError) {
       return NextResponse.json({ error: 'Logic check failed.', details: error.issues }, { status: 400 });
+    }
+    const pgCode = (error as { cause?: { code?: string } }).cause?.code;
+    if (pgCode === '23505') {
+      return NextResponse.json({ error: 'Model name already exists. Please use a different model name.' }, { status: 409 });
+    }
+    if (pgCode === '22003') {
+      return NextResponse.json({ error: 'Price is out of range. Max value is 999999.9999.' }, { status: 400 });
     }
     logger.error({ error }, 'Pricing table creation exception');
     return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });

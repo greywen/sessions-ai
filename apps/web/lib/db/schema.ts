@@ -56,6 +56,16 @@ export const normalizedMessages = pgTable('normalized_messages', {
   role: text('role').notNull(),
   contentBlocks: jsonb('content_blocks'),
   usage: jsonb('usage'),
+  // Materialized cost in USD computed at ingest time against the pricing_table
+  // row valid for `raw_timestamp`. Stored as numeric(12,6) for sub-cent
+  // precision. Reads SUM(cost_usd) directly instead of joining pricing at
+  // query time. See lib/cost/compute.ts for the exact formula and matching
+  // rules. Zero when usage is null OR no matching pricing row was found.
+  costUsd: numeric('cost_usd', { precision: 12, scale: 6 }).default('0').notNull(),
+  // FK-style reference to the pricing_table row used for this message's
+  // cost calculation (no hard FK so old pricing rows can be deleted without
+  // cascading). null when no matching pricing was found.
+  pricingId: uuid('pricing_id'),
   rawTimestamp: timestamp('raw_timestamp', { withTimezone: true }).notNull(),
   metadata: jsonb('metadata'),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
@@ -131,9 +141,13 @@ export const pricingTable = pgTable('pricing_table', {
   cachePricePerMtok: numeric('cache_price_per_mtok', { precision: 10, scale: 4 }),
   effectiveFrom: date('effective_from').notNull(),
   effectiveTo: date('effective_to'),
+  syncSource: text('sync_source', { enum: ['manual', 'openrouter'] }).default('manual').notNull(),
+  syncLocked: boolean('sync_locked').default(false).notNull(),
+  lastSyncedAt: timestamp('last_synced_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [
   uniqueIndex('idx_pricing_unique').on(table.model, table.provider, table.effectiveFrom),
+  uniqueIndex('idx_pricing_model_unique').on(table.model),
 ]);
 
 // ==================== daily_stats ====================

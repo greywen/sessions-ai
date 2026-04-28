@@ -55,11 +55,10 @@ interface CopilotRequest {
   message?: { text?: string; parts?: unknown[] };
   response?: Record<string, unknown>[];
   result?: {
+    timings?: { firstProgress?: number; totalElapsed?: number };
     metadata?: {
       toolCallRounds?: Array<{ thinking?: { tokens?: number } }>;
       resolvedModel?: string;
-      promptTokens?: number;
-      outputTokens?: number;
     };
   };
 }
@@ -388,59 +387,44 @@ export class CopilotParser implements ToolParser {
   }
 
   /**
-   * Extract token usage from request.result.metadata.
+   * Token usage for VS Code Copilot Chat sessions.
    *
-   * Priority:
-   * 1. `metadata.promptTokens` + `metadata.outputTokens` - newer Copilot versions
-   *    provide real counts here
-   * 2. `metadata.toolCallRounds[*].thinking.tokens` - fallback path that only
-   *    reflects thinking cost
+   * Truth (verified against vscode source `chatModel.ts` + real session files):
+   * - VS Code's persisted chat session JSONL does **NOT** carry the real
+   *   prompt/completion token counts. `ChatResponseModel.toJSON()` does include
+   *   a `completionTokens` field, but the GitHub Copilot extension never calls
+   *   `setUsage()` for chat requests, so it is always absent from the persisted
+   *   request object (`request.completionTokens === undefined`).
+   * - The only token-shaped data in `result.metadata` is
+   *   `toolCallRounds[i].thinking.tokens`, which counts **only the model's
+   *   internal reasoning tokens for that round** (typically 20-500). Treating
+   *   it as the assistant's `outputTokens` underreports real cost by 1-2
+   *   orders of magnitude and was the root cause of the wrong token display.
    *
-   * Return null when both are missing (do not fabricate usage).
+   * Therefore this method always returns `null` for `usage`. Honest absence is
+   * better than a fabricated number. The thinking-token aggregate and elapsed
+   * time are still surfaced through `metadata.thinkingTokens` and
+   * `metadata.elapsedMs` (see `buildMessages`) so the UI can show them
+   * separately if desired.
    */
-  private extractUsage(req: CopilotRequest, model: string) {
-    const md = req.result?.metadata;
-    if (!md) return null;
+  private extractUsage(): null {
+    return null;
+  }
 
-    const promptTokens =
-      typeof md.promptTokens === 'number' && Number.isFinite(md.promptTokens) && md.promptTokens >= 0
-        ? md.promptTokens
-        : null;
-    const outputTokens =
-      typeof md.outputTokens === 'number' && Number.isFinite(md.outputTokens) && md.outputTokens >= 0
-        ? md.outputTokens
-        : null;
-
-    if (promptTokens != null || outputTokens != null) {
-      return {
-        inputTokens: promptTokens ?? 0,
-        outputTokens: outputTokens ?? 0,
-        cacheCreationInputTokens: null,
-        cacheReadInputTokens: null,
-        model,
-      };
-    }
-
-    // Fallback: thinking tokens
-    const rounds = md.toolCallRounds;
+  /** Sum `toolCallRounds[*].thinking.tokens` for the request, or null if none. */
+  private aggregateThinkingTokens(req: CopilotRequest): number | null {
+    const rounds = req.result?.metadata?.toolCallRounds;
     if (!Array.isArray(rounds) || rounds.length === 0) return null;
-    let thinkingTokens = 0;
+    let total = 0;
     let hasAny = false;
     for (const r of rounds) {
       const t = r?.thinking?.tokens;
       if (typeof t === 'number' && Number.isFinite(t) && t >= 0) {
-        thinkingTokens += t;
+        total += t;
         hasAny = true;
       }
     }
-    if (!hasAny) return null;
-    return {
-      inputTokens: 0,
-      outputTokens: thinkingTokens,
-      cacheCreationInputTokens: null,
-      cacheReadInputTokens: null,
-      model,
-    };
+    return hasAny ? total : null;
   }
 
   private buildMessages(req: CopilotRequest, ctx: SessionContext): UnifiedMessage[] | null {
@@ -471,6 +455,19 @@ export class CopilotParser implements ToolParser {
     if (req.agent?.id) sharedMeta.agentId = req.agent.id;
     if (req.agent?.extensionVersion) sharedMeta.extensionVersion = req.agent.extensionVersion;
 
+    // Surface what IS available even though prompt/completion tokens are not:
+    //   - thinkingTokens: sum of internal-reasoning tokens across all tool rounds
+    //   - elapsedMs: total wall-clock time the assistant spent on the request
+    //   - toolCallRoundCount: how many tool-call rounds the assistant made
+    const thinkingTokens = this.aggregateThinkingTokens(req);
+    if (thinkingTokens != null) sharedMeta.thinkingTokens = thinkingTokens;
+    const elapsed = req.result?.timings?.totalElapsed;
+    if (typeof elapsed === 'number' && Number.isFinite(elapsed) && elapsed >= 0) {
+      sharedMeta.elapsedMs = elapsed;
+    }
+    const rounds = req.result?.metadata?.toolCallRounds;
+    if (Array.isArray(rounds)) sharedMeta.toolCallRoundCount = rounds.length;
+
     const userMsg: UnifiedMessage = {
       id: userId,
       sessionId: ctx.uuid,
@@ -494,7 +491,7 @@ export class CopilotParser implements ToolParser {
       sourceTool: 'GitHubCopilot',
       role: 'Assistant' as MessageRole,
       contentBlocks: blocks,
-      usage: this.extractUsage(req, model),
+      usage: this.extractUsage(),
       timestamp: new Date(asstTs).toISOString(),
       metadata: { ...sharedMeta },
     };

@@ -122,11 +122,7 @@ export async function GET(
 
     const [monthStats] = await db.execute(sql`
       SELECT
-        COALESCE(SUM(
-          ${nmInputTokensExpr} / 1000000 * COALESCE(p.input_price_per_mtok, 0) +
-          ${nmOutputTokensExpr} / 1000000 * COALESCE(p.output_price_per_mtok, 0) +
-          (${nmCacheWriteTokensExpr} + ${nmCacheReadTokensExpr}) / 1000000 * COALESCE(p.cache_price_per_mtok, 0)
-        ), 0)::text as total_cost,
+        COALESCE(SUM(nm.cost_usd), 0)::text as total_cost,
         COALESCE(SUM(
           ${nmInputTokensExpr} +
           ${nmOutputTokensExpr} +
@@ -134,19 +130,6 @@ export async function GET(
           ${nmCacheReadTokensExpr}
         ), 0)::text as total_tokens
       FROM normalized_messages nm
-      LEFT JOIN LATERAL (
-        SELECT input_price_per_mtok, output_price_per_mtok, cache_price_per_mtok
-        FROM pricing_table pt
-        WHERE (
-          pt.model = nm.usage->>'model'
-          OR pt.model = REGEXP_REPLACE(nm.usage->>'model', '^[^/]+/', '')
-          OR pt.model = REPLACE(REGEXP_REPLACE(nm.usage->>'model', '^[^/]+/', ''), '.', '-')
-        )
-          AND pt.effective_from <= nm.raw_timestamp::date
-          AND (pt.effective_to IS NULL OR pt.effective_to >= nm.raw_timestamp::date)
-        ORDER BY pt.effective_from DESC
-        LIMIT 1
-      ) p ON true
       WHERE nm.machine_id = ${id}
         AND nm.usage IS NOT NULL
         AND nm.raw_timestamp >= ${monthStartIso}

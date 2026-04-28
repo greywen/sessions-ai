@@ -6,6 +6,7 @@ import { getSession } from '@/lib/auth/session';
 import { hasRole } from '@/lib/auth/roles';
 import { logger } from '@/lib/logger';
 import { eq, sql, and, gte, lt, desc, count, countDistinct } from 'drizzle-orm';
+// 物化列：cost_usd 已在 ingest 时落库（lib/cost/compute.ts），读侧直接 SUM。
 
 const TOKEN_NUMERIC_REGEX = '^[0-9]+([.][0-9]+)?$';
 
@@ -149,26 +150,8 @@ export async function GET(request: Request) {
           COALESCE(SUM(${nmOutputTokensExpr}), 0) as total_output_tokens,
           COALESCE(SUM(${nmCacheWriteTokensExpr}), 0) as cache_write_tokens,
           COALESCE(SUM(${nmCacheReadTokensExpr}), 0) as cache_read_tokens,
-          COALESCE(SUM(
-            ${nmInputTokensExpr} / 1000000 * COALESCE(p.input_price_per_mtok, 0) +
-            ${nmOutputTokensExpr} / 1000000 * COALESCE(p.output_price_per_mtok, 0) +
-            (${nmCacheWriteTokensExpr} +
-             ${nmCacheReadTokensExpr}
-            ) / 1000000 * COALESCE(p.cache_price_per_mtok, 0)
-          ), 0) as total_cost
+          COALESCE(SUM(nm.cost_usd), 0) as total_cost
         FROM normalized_messages nm
-        LEFT JOIN LATERAL (
-          SELECT input_price_per_mtok, output_price_per_mtok, cache_price_per_mtok
-          FROM pricing_table pt
-          WHERE (
-            pt.model = nm.usage->>'model'
-            OR pt.model = REGEXP_REPLACE(nm.usage->>'model', '^[^/]+/', '')
-            OR pt.model = REPLACE(REGEXP_REPLACE(nm.usage->>'model', '^[^/]+/', ''), '.', '-')
-          )
-            AND pt.effective_from <= nm.raw_timestamp::date
-            AND (pt.effective_to IS NULL OR pt.effective_to >= nm.raw_timestamp::date)
-          ORDER BY pt.effective_from DESC LIMIT 1
-        ) p ON true
         WHERE nm.usage IS NOT NULL
           AND nm.raw_timestamp >= ${rangeStart.toISOString()}
           AND nm.raw_timestamp < ${rangeEnd.toISOString()}
@@ -177,26 +160,8 @@ export async function GET(request: Request) {
       // 8. the previous Token + Expense Summary(MOM)
       db.execute(sql`
         SELECT
-          COALESCE(SUM(
-            ${nmInputTokensExpr} / 1000000 * COALESCE(p.input_price_per_mtok, 0) +
-            ${nmOutputTokensExpr} / 1000000 * COALESCE(p.output_price_per_mtok, 0) +
-            (${nmCacheWriteTokensExpr} +
-             ${nmCacheReadTokensExpr}
-            ) / 1000000 * COALESCE(p.cache_price_per_mtok, 0)
-          ), 0) as total_cost
+          COALESCE(SUM(nm.cost_usd), 0) as total_cost
         FROM normalized_messages nm
-        LEFT JOIN LATERAL (
-          SELECT input_price_per_mtok, output_price_per_mtok, cache_price_per_mtok
-          FROM pricing_table pt
-          WHERE (
-            pt.model = nm.usage->>'model'
-            OR pt.model = REGEXP_REPLACE(nm.usage->>'model', '^[^/]+/', '')
-            OR pt.model = REPLACE(REGEXP_REPLACE(nm.usage->>'model', '^[^/]+/', ''), '.', '-')
-          )
-            AND pt.effective_from <= nm.raw_timestamp::date
-            AND (pt.effective_to IS NULL OR pt.effective_to >= nm.raw_timestamp::date)
-          ORDER BY pt.effective_from DESC LIMIT 1
-        ) p ON true
         WHERE nm.usage IS NOT NULL
           AND nm.raw_timestamp >= ${prevRangeStart.toISOString()}
           AND nm.raw_timestamp < ${prevRangeEnd.toISOString()}
@@ -228,24 +193,8 @@ export async function GET(request: Request) {
       db.execute(sql`
         SELECT
           TO_CHAR(nm.raw_timestamp, 'YYYY-MM-DD') as day,
-          COALESCE(SUM(
-            ${nmInputTokensExpr} / 1000000 * COALESCE(p.input_price_per_mtok, 0) +
-            ${nmOutputTokensExpr} / 1000000 * COALESCE(p.output_price_per_mtok, 0) +
-            (${nmCacheWriteTokensExpr} + ${nmCacheReadTokensExpr}) / 1000000 * COALESCE(p.cache_price_per_mtok, 0)
-          ), 0) as cost
+          COALESCE(SUM(nm.cost_usd), 0) as cost
         FROM normalized_messages nm
-        LEFT JOIN LATERAL (
-          SELECT input_price_per_mtok, output_price_per_mtok, cache_price_per_mtok
-          FROM pricing_table pt
-          WHERE (
-            pt.model = nm.usage->>'model'
-            OR pt.model = REGEXP_REPLACE(nm.usage->>'model', '^[^/]+/', '')
-            OR pt.model = REPLACE(REGEXP_REPLACE(nm.usage->>'model', '^[^/]+/', ''), '.', '-')
-          )
-            AND pt.effective_from <= nm.raw_timestamp::date
-            AND (pt.effective_to IS NULL OR pt.effective_to >= nm.raw_timestamp::date)
-          ORDER BY pt.effective_from DESC LIMIT 1
-        ) p ON true
         WHERE nm.usage IS NOT NULL
           AND nm.raw_timestamp >= ${rangeStart.toISOString()}
           AND nm.raw_timestamp < ${rangeEnd.toISOString()}

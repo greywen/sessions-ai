@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { toast } from 'sonner';
-import { Plus, Pencil, Trash2 } from 'lucide-react';
+import { Plus, Pencil, RefreshCw, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
@@ -31,6 +31,9 @@ interface PricingItem {
   cachePricePerMtok: string | null;
   effectiveFrom: string;
   effectiveTo: string | null;
+  syncSource: 'manual' | 'openrouter';
+  syncLocked: boolean;
+  lastSyncedAt: string | null;
   createdAt: string;
 }
 
@@ -38,6 +41,7 @@ const PROVIDER_LABELS: Record<string, string> = {
   anthropic: 'Anthropic',
   openai: 'OpenAI',
   google: 'Google',
+  openrouter: 'OpenRouter',
 };
 
 export default function PricingPage() {
@@ -48,6 +52,7 @@ export default function PricingPage() {
   const [editItem, setEditItem] = React.useState<PricingItem | null>(null);
   const [deleteItem, setDeleteItem] = React.useState<PricingItem | null>(null);
   const [submitting, setSubmitting] = React.useState(false);
+  const [syncing, setSyncing] = React.useState(false);
 
   // Form Status
   const [formModel, setFormModel] = React.useState('');
@@ -162,13 +167,46 @@ export default function PricingPage() {
     }
   };
 
+  const handleSyncOpenRouter = async () => {
+    setSyncing(true);
+    try {
+      const res = await fetch('/api/pricing/sync/openrouter', { method: 'POST' });
+      const json = await res.json();
+      if (!res.ok) {
+        toast.error(json.error || t('common.operationFailed'));
+        return;
+      }
+      const data = json.data as {
+        inserted: number;
+        updated: number;
+        skippedLocked: number;
+      };
+      toast.success(t('pricing.sync.toast.success', {
+        inserted: data.inserted,
+        updated: data.updated,
+        skippedLocked: data.skippedLocked,
+      }));
+      fetchPricing();
+    } catch {
+      toast.error(t('pricing.sync.toast.failed'));
+    } finally {
+      setSyncing(false);
+    }
+  };
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">{t('pricing.title')}</h1>
-        <Button onClick={openCreate}>
-          <Plus className="mr-2 h-4 w-4" />{t('pricing.addNew')}
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" onClick={handleSyncOpenRouter} disabled={syncing}>
+            <RefreshCw className={`mr-2 h-4 w-4 ${syncing ? 'animate-spin' : ''}`} />
+            {syncing ? t('pricing.syncing') : t('pricing.sync')}
+          </Button>
+          <Button onClick={openCreate}>
+            <Plus className="mr-2 h-4 w-4" />{t('pricing.addNew')}
+          </Button>
+        </div>
       </div>
 
       {loading ? (
@@ -203,10 +241,17 @@ export default function PricingPage() {
                     </div>
                   </TableCell>
                   <TableCell>
-                    <Badge variant="outline">
-                      <ProviderLogo provider={item.provider} size={14} />
-                      {providerLabel}
-                    </Badge>
+                    <div className="flex items-center gap-2">
+                      <Badge variant="outline">
+                        <ProviderLogo provider={item.provider} size={14} />
+                        {providerLabel}
+                      </Badge>
+                      {item.syncLocked ? (
+                        <Badge variant="secondary">{t('pricing.badge.manualLocked')}</Badge>
+                      ) : item.syncSource === 'openrouter' ? (
+                        <Badge variant="outline">{t('pricing.badge.synced')}</Badge>
+                      ) : null}
+                    </div>
                   </TableCell>
                   <TableCell className="text-right font-mono tabular-nums">${item.inputPricePerMtok}</TableCell>
                   <TableCell className="text-right font-mono tabular-nums">${item.outputPricePerMtok}</TableCell>
