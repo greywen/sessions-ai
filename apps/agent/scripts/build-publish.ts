@@ -53,8 +53,8 @@ if (buildResult.status !== 0) {
   process.exit(buildResult.status ?? 1);
 }
 
-console.log('✏️  Writing bin/session-vault-agent.js ...');
-const binPath = join(out, 'bin', 'session-vault-agent.js');
+console.log('✏️  Writing bin/sessions-ai.js ...');
+const binPath = join(out, 'bin', 'sessions-ai.js');
 writeFileSync(binPath, `#!/usr/bin/env bun\nimport '../dist/main.js';\n`);
 try {
   chmodSync(binPath, 0o755);
@@ -68,12 +68,12 @@ const agentPkg = JSON.parse(readFileSync(join(agentDir, 'package.json'), 'utf8')
   dependencies: Record<string, string>;
 };
 const publishPkg = {
-  name: 'session-vault-agent',
+  name: 'sessions-ai',
   version: agentPkg.version,
   description:
     'session-vault Agent — local LLM session collector for tools like GitHub Copilot Chat and OpenCode (Bun runtime).',
   type: 'module',
-  bin: { 'session-vault-agent': 'bin/session-vault-agent.js' },
+  bin: { 'sessions-ai': 'bin/sessions-ai.js' },
   files: ['dist', 'bin', 'README.md'],
   engines: { bun: '>=1.3.0' },
   dependencies: Object.fromEntries(
