@@ -130,7 +130,7 @@ export async function POST() {
         method: 'GET',
         headers: {
           Accept: 'application/json',
-          'User-Agent': 'session-vault-pricing-sync',
+          'User-Agent': 'sessions-ai-pricing-sync',
         },
         cache: 'no-store',
         signal: controller.signal,

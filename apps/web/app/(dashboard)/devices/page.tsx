@@ -27,7 +27,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { TOOL_COLORS } from '@session-vault/shared';
+import { TOOL_COLORS } from '@sessions-ai/shared';
 import { formatDistanceToNow } from 'date-fns';
 import { useI18n } from '@/lib/i18n/provider';
 import { dateFnsLocale } from '@/lib/i18n/date-locale';

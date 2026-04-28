@@ -26,7 +26,7 @@ import { sql } from 'drizzle-orm';
 export async function POST(request: Request) {
   // Authentication
   const cronSecret = request.headers.get('x-cron-secret');
-  const expectedSecret = process.env.CRON_SECRET || 'session-vault-cron-secret';
+  const expectedSecret = process.env.CRON_SECRET || 'sessions-ai-cron-secret';
   if (cronSecret !== expectedSecret) {
     const session = await getSession();
     if (!session || !hasRole(session.role, 'admin')) {

@@ -28,20 +28,20 @@ export interface AgentConfig {
 
 export function defaultDataDir(): string {
   // Platform-specific default data directory:
-  // - Windows: %LOCALAPPDATA%\session-vault
-  // - macOS:   ~/Library/Application Support/session-vault
-  // - Linux:   $XDG_DATA_HOME/session-vault or ~/.local/share/session-vault
+  // - Windows: %LOCALAPPDATA%\sessions-ai
+  // - macOS:   ~/Library/Application Support/sessions-ai
+  // - Linux:   $XDG_DATA_HOME/sessions-ai or ~/.local/share/sessions-ai
   if (process.platform === 'win32') {
     const local = process.env.LOCALAPPDATA;
-    if (local) return join(local, 'session-vault');
-    return join(homedir(), 'AppData', 'Local', 'session-vault');
+    if (local) return join(local, 'sessions-ai');
+    return join(homedir(), 'AppData', 'Local', 'sessions-ai');
   }
   if (process.platform === 'darwin') {
-    return join(homedir(), 'Library', 'Application Support', 'session-vault');
+    return join(homedir(), 'Library', 'Application Support', 'sessions-ai');
   }
   const xdg = process.env.XDG_DATA_HOME;
-  if (xdg) return join(xdg, 'session-vault');
-  return join(homedir(), '.local', 'share', 'session-vault');
+  if (xdg) return join(xdg, 'sessions-ai');
+  return join(homedir(), '.local', 'share', 'sessions-ai');
 }
 
 const AGENT_VERSION = '0.1.0';

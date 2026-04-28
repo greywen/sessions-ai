@@ -83,7 +83,7 @@ export class Agent {
   async start(): Promise<{ stop: () => Promise<void> }> {
     logger.info(
       { version: this.cfg.agentVersion, server: this.cfg.serverUrl },
-      'session-vault Agent starting',
+      'sessions-ai Agent starting',
     );
 
     mkdirSync(this.cfg.dataDir, { recursive: true });

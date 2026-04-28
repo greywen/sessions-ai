@@ -2,14 +2,14 @@
  * Build a publishable npm package at `apps/agent/publish-pkg/`.
  *
  * Strategy:
- *   - Bundle Agent + `@session-vault/shared` into a single `dist/main.js`
+ *   - Bundle Agent + `@sessions-ai/shared` into a single `dist/main.js`
  *     with `bun build` (target=bun), so the published package does not
  *     depend on the workspace `shared` package.
  *   - Externalize heavy npm dependencies (chokidar, pino, pino-pretty,
  *     node-machine-id) — they remain regular `dependencies` in the
  *     published `package.json`.
- *   - Emit a tiny `bin/session-vault.js` shim with a `bun` shebang so
- *     `npm i -g session-vault` produces a working `session-vault` command.
+ *   - Emit a tiny `bin/sessions-ai.js` shim with a `bun` shebang so
+ *     `npm i -g sessions-ai` produces a working `sessions-ai` command.
  *
  * Usage:
  *   bun run scripts/build-publish.ts
@@ -71,7 +71,7 @@ const publishPkg = {
   name: 'sessions-ai',
   version: agentPkg.version,
   description:
-    'session-vault Agent — local LLM session collector for tools like GitHub Copilot Chat and OpenCode (Bun runtime).',
+    'sessions-ai Agent — local LLM session collector for tools like GitHub Copilot Chat and OpenCode (Bun runtime).',
   type: 'module',
   bin: { 'sessions-ai': 'bin/sessions-ai.js' },
   files: ['dist', 'bin', 'README.md'],

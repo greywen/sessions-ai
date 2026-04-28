@@ -4,7 +4,7 @@ import { dirname, join, resolve } from 'node:path';
 
 import { loadConfig } from '../../src/config.ts';
 
-export const SERVICE_NAME = 'session-vault-agent';
+export const SERVICE_NAME = 'sessions-ai-agent';
 export const SERVICE_LABEL = 'com.llmsessionvault.agent';
 export const APP_ROOT = resolve(import.meta.dir, '..', '..');
 export const AGENT_ENTRYPOINT = join(APP_ROOT, 'src', 'main.ts');

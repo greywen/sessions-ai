@@ -8,8 +8,8 @@ When generating Git commit messages, strictly adhere to the following rules:
 
 Correct examples:
 
-- `Added: Added user session timeout reminder`
-- `Fixed: Resolved null pointer exception during bulk import`
-- `Optimised: Reduced rendering time for the dashboard’s first screen`
-- `Documentation: Added instructions for deployment environment variables`
-- `Refactored: Split the audit module and standardised error handling`
+- `added: added user session timeout reminder`
+- `fixed: resolved null pointer exception during bulk import`
+- `optimised: reduced rendering time for the dashboard’s first screen`
+- `documentation: added instructions for deployment environment variables`
+- `refactored: split the audit module and standardised error handling`

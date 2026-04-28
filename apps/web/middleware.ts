@@ -23,7 +23,7 @@ export async function middleware(request: NextRequest) {
   }
 
   // Others session token
-  const token = request.cookies.get('session-vault-session')?.value;
+  const token = request.cookies.get('sessions-ai-session')?.value;
 
   if (!token) {
     // API Request return 401

@@ -2,7 +2,7 @@ import { cookies } from 'next/headers';
 import { signToken, verifyToken, type SessionPayload } from './jwt';
 import { logger } from '../logger';
 
-const SESSION_COOKIE = 'session-vault-session';
+const SESSION_COOKIE = 'sessions-ai-session';
 
 // Create Session(Settings cookie)
 export async function createSession(payload: { userId: string; email: string; role: string }) {

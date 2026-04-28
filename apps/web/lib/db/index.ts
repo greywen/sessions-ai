@@ -3,7 +3,7 @@ import postgres from 'postgres';
 import * as schema from './schema';
 import { logger } from '../logger';
 
-const databaseUrl = process.env.DATABASE_URL || 'postgresql://postgres:123456@localhost:5432/session_vault';
+const databaseUrl = process.env.DATABASE_URL || 'postgresql://postgres:123456@localhost:5432/sessions_ai';
 
 const client = postgres(databaseUrl, {
   max: 10,

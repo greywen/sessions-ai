@@ -144,7 +144,7 @@ function buildLinuxRunner(ctx: ServiceContext): string {
 
 function buildSystemdUnit(ctx: ServiceContext, runnerPath: string): string {
   return `[Unit]
-Description=session-vault Agent
+Description=sessions-ai Agent
 After=network-online.target
 Wants=network-online.target
 

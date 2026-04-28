@@ -17,7 +17,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 
 const databaseUrl =
-  process.env.DATABASE_URL || 'postgresql://postgres:123456@localhost:5432/session_vault';
+  process.env.DATABASE_URL || 'postgresql://postgres:123456@localhost:5432/sessions_ai';
 
 const withSeed = process.argv.includes('--seed');
 

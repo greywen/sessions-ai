@@ -1,4 +1,4 @@
-import type { UserRole } from '@session-vault/shared';
+import type { UserRole } from '@sessions-ai/shared';
 
 const ROLE_HIERARCHY: Record<string, number> = {
   super_admin: 3,

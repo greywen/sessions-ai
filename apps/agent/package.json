@@ -1,5 +1,5 @@
 {
-  "name": "@session-vault/agent",
+  "name": "@sessions-ai/agent",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -19,7 +19,7 @@
     "publish:prepare": "bun run scripts/build-publish.ts"
   },
   "dependencies": {
-    "@session-vault/shared": "workspace:*",
+    "@sessions-ai/shared": "workspace:*",
     "chokidar": "^4.0.3",
     "node-machine-id": "^1.1.12",
     "pino": "^10.3.1",

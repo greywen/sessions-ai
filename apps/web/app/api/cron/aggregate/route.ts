@@ -10,7 +10,7 @@ export async function POST(request: Request) {
   try {
     // Authentication:CRON_SECRET or Admin session
     const cronSecret = request.headers.get('x-cron-secret');
-    const expectedSecret = process.env.CRON_SECRET || 'session-vault-cron-secret';
+    const expectedSecret = process.env.CRON_SECRET || 'sessions-ai-cron-secret';
 
     if (cronSecret !== expectedSecret) {
       // Try Admin session Authentication

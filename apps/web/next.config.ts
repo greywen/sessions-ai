@@ -1,7 +1,7 @@
 import type { NextConfig } from 'next';
 
 const nextConfig: NextConfig = {
-  transpilePackages: ['@session-vault/shared'],
+  transpilePackages: ['@sessions-ai/shared'],
 };
 
 export default nextConfig;

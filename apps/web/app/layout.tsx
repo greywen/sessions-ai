@@ -11,7 +11,7 @@ import {
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'session-vault - AI Assistant Audit Management',
+  title: 'sessions-ai - AI Assistant Audit Management',
   description: 'Enterprise distributed AI assistant audit & remote configuration management system',
 };
 

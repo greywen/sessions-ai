@@ -6,4 +6,4 @@ export type {
   ContentBlock,
   TokenUsage,
   UnifiedMessage,
-} from '@session-vault/shared';
+} from '@sessions-ai/shared';

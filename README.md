@@ -1,4 +1,4 @@
-# session-vault
+# sessions-ai
 
 > A cross-tool platform for collecting, aggregating, and governing LLM sessions.
 
