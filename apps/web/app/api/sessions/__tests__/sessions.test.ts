@@ -11,12 +11,14 @@ const querySchema = z.object({
   from: z.string().optional(),
   to: z.string().optional(),
   search: z.string().max(200).optional(),
+  favorite: z.enum(['true', 'false']).optional(),
 });
 
 // Message Paging Query Parameters schema
 const messagesQuerySchema = z.object({
   cursor: z.string().datetime().optional(),
   limit: z.coerce.number().int().min(1).max(100).default(50),
+  favorite: z.enum(['true', 'false']).optional(),
 });
 
 describe('Sessions API Schema Correction', () => {
@@ -56,6 +58,14 @@ describe('Sessions API Schema Correction', () => {
       });
       expect(result.success).toBe(true);
       expect(result.data?.search).toBe('Help me fix it auth.ts');
+    });
+
+    it('Acceptable favorite Filter Bar', () => {
+      const result = querySchema.safeParse({
+        favorite: 'true',
+      });
+      expect(result.success).toBe(true);
+      expect(result.data?.favorite).toBe('true');
     });
 
     it('Excessive length should be rejected search', () => {
@@ -100,9 +110,11 @@ describe('Sessions API Schema Correction', () => {
       const result = messagesQuerySchema.safeParse({
         cursor: '2026-04-03T10:00:00Z',
         limit: 30,
+        favorite: 'false',
       });
       expect(result.success).toBe(true);
       expect(result.data?.cursor).toBe('2026-04-03T10:00:00Z');
+      expect(result.data?.favorite).toBe('false');
     });
 
     it('Invalid date format should be rejected cursor', () => {

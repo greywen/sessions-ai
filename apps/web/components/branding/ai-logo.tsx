@@ -10,6 +10,7 @@ import {
   ModelIcon,
   OpenCode,
   ProviderIcon,
+  Qwen,
 } from '@lobehub/icons';
 import { cn } from '@/lib/utils';
 
@@ -20,6 +21,8 @@ const TOOL_ICON_MAP = {
   GeminiCli: GeminiCLI,
   GitHubCopilot: GithubCopilot,
   Codex,
+  QwenCode: Qwen,
+  Qcoder: Qwen,
 } as const;
 
 const TOOL_PROVIDER_MAP: Record<string, string> = {
@@ -30,6 +33,8 @@ const TOOL_PROVIDER_MAP: Record<string, string> = {
   Aider: 'openai',
   GitHubCopilot: 'githubcopilot',
   Codex: 'openai',
+  QwenCode: 'qwen',
+  Qcoder: 'qwen',
 };
 
 const TOOL_LABELS: Record<string, string> = {
@@ -40,6 +45,8 @@ const TOOL_LABELS: Record<string, string> = {
   Aider: 'Aider',
   GitHubCopilot: 'GitHub Copilot',
   Codex: 'Codex',
+  QwenCode: 'Qcoder',
+  Qcoder: 'Qcoder',
 };
 
 export function getToolLabel(tool: string): string {

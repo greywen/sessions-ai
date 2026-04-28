@@ -3,7 +3,7 @@
 import React from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
-import { ArrowLeft, MessageSquare } from 'lucide-react';
+import { ArrowLeft, MessageSquare, Star } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
@@ -20,6 +20,7 @@ import { dateFnsLocale } from '@/lib/i18n/date-locale';
 interface SessionMeta {
   sessionId: string;
   sessionTitle: string | null;
+  isFavorite: boolean;
   sourceTool: string;
   machineId: string;
   messageCount: number;
@@ -44,6 +45,7 @@ interface MessageItem {
   usage: TokenUsage | null;
   rawTimestamp: string;
   metadata: Record<string, unknown> | null;
+  isFavorite: boolean;
 }
 
 function dedupeMessagesById(messages: MessageItem[]): MessageItem[] {
@@ -116,6 +118,8 @@ export default function SessionDetailPage({ params }: { params: Promise<{ id: st
   const [loadingMore, setLoadingMore] = React.useState(false);
   const [nextCursor, setNextCursor] = React.useState<string | null>(null);
   const [initialLoadDone, setInitialLoadDone] = React.useState(false);
+  const [togglingSessionFavorite, setTogglingSessionFavorite] = React.useState(false);
+  const [togglingMessageFavorites, setTogglingMessageFavorites] = React.useState<Record<string, boolean>>({});
   const requestedCursorRef = React.useRef<Set<string>>(new Set());
 
   // Get metadata
@@ -190,6 +194,62 @@ export default function SessionDetailPage({ params }: { params: Promise<{ id: st
     setReconstructedMessages(chain);
   }, [messages, nextCursor, initialLoadDone, fetchMessages]);
 
+  const toggleSessionFavorite = React.useCallback(async () => {
+    if (!meta || togglingSessionFavorite) return;
+
+    const nextFavorite = !meta.isFavorite;
+    setTogglingSessionFavorite(true);
+    setMeta((prev) => (prev ? { ...prev, isFavorite: nextFavorite } : prev));
+    try {
+      const res = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ favorite: nextFavorite }),
+      });
+      if (!res.ok) throw new Error('Failed to update session favorite status');
+    } catch (error) {
+      setMeta((prev) => (prev ? { ...prev, isFavorite: !nextFavorite } : prev));
+      toast.error(t('common.operationFailed'));
+      console.error('[Session details] Session favorite update failed:', error);
+    } finally {
+      setTogglingSessionFavorite(false);
+    }
+  }, [meta, sessionId, t, togglingSessionFavorite]);
+
+  const toggleMessageFavorite = React.useCallback(async (messageId: string, currentFavorite: boolean) => {
+    if (togglingMessageFavorites[messageId]) return;
+
+    const nextFavorite = !currentFavorite;
+    setTogglingMessageFavorites((prev) => ({ ...prev, [messageId]: true }));
+    setMessages((prev) => prev.map((item) => (
+      item.id === messageId ? { ...item, isFavorite: nextFavorite } : item
+    )));
+
+    try {
+      const res = await fetch(
+        `/api/sessions/${encodeURIComponent(sessionId)}/messages/${encodeURIComponent(messageId)}/favorite`,
+        {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ favorite: nextFavorite }),
+        },
+      );
+      if (!res.ok) throw new Error('Failed to update message favorite status');
+    } catch (error) {
+      setMessages((prev) => prev.map((item) => (
+        item.id === messageId ? { ...item, isFavorite: currentFavorite } : item
+      )));
+      toast.error(t('common.operationFailed'));
+      console.error('[Session details] Message favorite update failed:', error);
+    } finally {
+      setTogglingMessageFavorites((prev) => {
+        const next = { ...prev };
+        delete next[messageId];
+        return next;
+      });
+    }
+  }, [sessionId, t, togglingMessageFavorites]);
+
   const getToolColor = (tool: string) => {
     return TOOL_COLORS[tool] ?? { text: 'text-gray-600', bg: 'bg-gray-100' };
   };
@@ -226,11 +286,22 @@ export default function SessionDetailPage({ params }: { params: Promise<{ id: st
             {meta?.sessionTitle
               ? meta.sessionTitle
               : meta?.sessionId
-                ? meta.sessionId.length > 20
+                ? (meta.sessionId.length > 20
                   ? meta.sessionId.slice(0, 20) + '...'
-                  : meta.sessionId
+                  : meta.sessionId)
                 : t('session.detail.fallbackTitle')}
           </h1>
+          <Button
+            type="button"
+            size="icon"
+            variant="ghost"
+            className="h-8 w-8"
+            disabled={!meta || togglingSessionFavorite}
+            aria-label={meta?.isFavorite ? t('sessions.favorite.removeSession') : t('sessions.favorite.addSession')}
+            onClick={toggleSessionFavorite}
+          >
+            <Star className={`h-4 w-4 ${meta?.isFavorite ? 'fill-amber-400 text-amber-500' : 'text-muted-foreground'}`} />
+          </Button>
           {meta && (
             <Badge
               variant="outline"
@@ -284,8 +355,21 @@ export default function SessionDetailPage({ params }: { params: Promise<{ id: st
                             <ContentBlockRenderer key={i} block={block} />
                           ))}
                         </div>
-                        <div className="mt-1 text-xs text-muted-foreground">
-                          {format(new Date(msg.rawTimestamp), 'HH:mm:ss', { locale: dateFnsLocale(locale) })}
+                        <div className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
+                          <span>{format(new Date(msg.rawTimestamp), 'HH:mm:ss', { locale: dateFnsLocale(locale) })}</span>
+                          <Button
+                            type="button"
+                            size="icon"
+                            variant="ghost"
+                            className="h-6 w-6"
+                            disabled={!!togglingMessageFavorites[msg.id]}
+                            aria-label={msg.isFavorite ? t('sessions.favorite.removeMessage') : t('sessions.favorite.addMessage')}
+                            onClick={() => toggleMessageFavorite(msg.id, msg.isFavorite)}
+                          >
+                            <Star
+                              className={`h-3.5 w-3.5 ${msg.isFavorite ? 'fill-amber-400 text-amber-500' : 'text-muted-foreground'}`}
+                            />
+                          </Button>
                         </div>
                       </div>
                     </div>
@@ -302,6 +386,19 @@ export default function SessionDetailPage({ params }: { params: Promise<{ id: st
                             </Badge>
                           )}
                           <span>{format(new Date(msg.rawTimestamp), 'HH:mm:ss', { locale: dateFnsLocale(locale) })}</span>
+                          <Button
+                            type="button"
+                            size="icon"
+                            variant="ghost"
+                            className="ml-auto h-6 w-6"
+                            disabled={!!togglingMessageFavorites[msg.id]}
+                            aria-label={msg.isFavorite ? t('sessions.favorite.removeMessage') : t('sessions.favorite.addMessage')}
+                            onClick={() => toggleMessageFavorite(msg.id, msg.isFavorite)}
+                          >
+                            <Star
+                              className={`h-3.5 w-3.5 ${msg.isFavorite ? 'fill-amber-400 text-amber-500' : 'text-muted-foreground'}`}
+                            />
+                          </Button>
                         </div>
                         <div className="space-y-2">
                           {msg.contentBlocks?.map((block, i) => (
@@ -317,8 +414,21 @@ export default function SessionDetailPage({ params }: { params: Promise<{ id: st
                       {msg.contentBlocks?.map((block, i) => (
                         <ContentBlockRenderer key={i} block={block} />
                       ))}
-                      <div className="mt-1 text-xs">
-                        {format(new Date(msg.rawTimestamp), 'HH:mm:ss', { locale: dateFnsLocale(locale) })}
+                      <div className="mt-1 flex items-center gap-1 text-xs">
+                        <span>{format(new Date(msg.rawTimestamp), 'HH:mm:ss', { locale: dateFnsLocale(locale) })}</span>
+                        <Button
+                          type="button"
+                          size="icon"
+                          variant="ghost"
+                          className="h-6 w-6"
+                          disabled={!!togglingMessageFavorites[msg.id]}
+                          aria-label={msg.isFavorite ? t('sessions.favorite.removeMessage') : t('sessions.favorite.addMessage')}
+                          onClick={() => toggleMessageFavorite(msg.id, msg.isFavorite)}
+                        >
+                          <Star
+                            className={`h-3.5 w-3.5 ${msg.isFavorite ? 'fill-amber-400 text-amber-500' : 'text-muted-foreground'}`}
+                          />
+                        </Button>
                       </div>
                     </div>
                   )}

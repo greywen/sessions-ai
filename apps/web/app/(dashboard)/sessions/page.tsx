@@ -3,7 +3,7 @@
 import React from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
-import { Search, MessageSquare } from 'lucide-react';
+import { Search, MessageSquare, Star } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -29,6 +29,7 @@ interface SessionItem {
   ownerEmail: string | null;
   firstUserMessage: string | null;
   sessionTitle: string | null;
+  isFavorite: boolean;
 }
 
 interface SessionsResponse {
@@ -51,10 +52,12 @@ export default function SessionsPage() {
   const [pagination, setPagination] = React.useState({ page: 1, limit: 20, total: 0, totalPages: 0 });
   const [toolFilter, setToolFilter] = React.useState<string>('all');
   const [userFilter, setUserFilter] = React.useState<string>('all');
+  const [favoriteFilter, setFavoriteFilter] = React.useState<'all' | 'favorited' | 'unfavorited'>('all');
   const [timeRange, setTimeRange] = React.useState<TimeRangeValue>(() => getDefaultRange(30));
   const [searchInput, setSearchInput] = React.useState('');
   const [searchQuery, setSearchQuery] = React.useState('');
   const [users, setUsers] = React.useState<UserItem[]>([]);
+  const [togglingSessions, setTogglingSessions] = React.useState<Record<string, boolean>>({});
   const searchTimer = React.useRef<ReturnType<typeof setTimeout>>(undefined);
   const loadMoreRef = React.useRef<HTMLDivElement>(null);
 
@@ -67,6 +70,8 @@ export default function SessionsPage() {
       params.set('limit', '20');
       if (toolFilter !== 'all') params.set('sourceTool', toolFilter);
       if (userFilter !== 'all') params.set('userId', userFilter);
+      if (favoriteFilter === 'favorited') params.set('favorite', 'true');
+      if (favoriteFilter === 'unfavorited') params.set('favorite', 'false');
       const { fromIso, toIso } = rangeToIsoBounds(timeRange);
       params.set('from', fromIso);
       params.set('to', toIso);
@@ -91,7 +96,7 @@ export default function SessionsPage() {
       setLoading(false);
       setLoadingMore(false);
     }
-  }, [toolFilter, userFilter, timeRange, searchQuery, t]);
+  }, [toolFilter, userFilter, favoriteFilter, timeRange, searchQuery, t]);
 
   const fetchUsers = React.useCallback(async () => {
     try {
@@ -110,6 +115,50 @@ export default function SessionsPage() {
   React.useEffect(() => {
     fetchUsers();
   }, [fetchUsers]);
+
+  const toggleSessionFavorite = React.useCallback(async (sessionId: string, currentFavorite: boolean) => {
+    if (togglingSessions[sessionId]) return;
+    const nextFavorite = !currentFavorite;
+    setTogglingSessions((prev) => ({ ...prev, [sessionId]: true }));
+
+    setSessions((prev) => {
+      const updated = prev.map((item) => (
+        item.sessionId === sessionId ? { ...item, isFavorite: nextFavorite } : item
+      ));
+      if (favoriteFilter === 'favorited' && !nextFavorite) {
+        return updated.filter((item) => item.sessionId !== sessionId);
+      }
+      if (favoriteFilter === 'unfavorited' && nextFavorite) {
+        return updated.filter((item) => item.sessionId !== sessionId);
+      }
+      return updated;
+    });
+
+    try {
+      const res = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ favorite: nextFavorite }),
+      });
+      if (!res.ok) throw new Error('Failed to update session favorite status');
+
+      if (favoriteFilter !== 'all') {
+        fetchSessions(1);
+      }
+    } catch (error) {
+      setSessions((prev) => prev.map((item) => (
+        item.sessionId === sessionId ? { ...item, isFavorite: currentFavorite } : item
+      )));
+      toast.error(t('common.operationFailed'));
+      console.error('[Sessions list] Favorite update failed:', error);
+    } finally {
+      setTogglingSessions((prev) => {
+        const next = { ...prev };
+        delete next[sessionId];
+        return next;
+      });
+    }
+  }, [favoriteFilter, fetchSessions, t, togglingSessions]);
 
   const handleSearchChange = (value: string) => {
     setSearchInput(value);
@@ -191,6 +240,19 @@ export default function SessionsPage() {
             ))}
           </SelectContent>
         </Select>
+        <Select
+          value={favoriteFilter}
+          onValueChange={(v) => { setFavoriteFilter(v as 'all' | 'favorited' | 'unfavorited'); }}
+        >
+          <SelectTrigger className="w-[160px]">
+            <SelectValue placeholder={t('sessions.filter.favorite')} />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">{t('sessions.filter.favorite.all')}</SelectItem>
+            <SelectItem value="favorited">{t('sessions.filter.favorite.only')}</SelectItem>
+            <SelectItem value="unfavorited">{t('sessions.filter.favorite.exclude')}</SelectItem>
+          </SelectContent>
+        </Select>
         <TimeRangeSelector value={timeRange} onChange={setTimeRange} />
       </div>
 
@@ -236,9 +298,27 @@ export default function SessionsPage() {
                             </span>
                           )}
                         </div>
-                        <span className="shrink-0 text-xs text-muted-foreground">
-                          {formatDistanceToNow(new Date(s.lastMessageAt), { addSuffix: true, locale: dateFnsLocale(locale) })}
-                        </span>
+                        <div className="flex shrink-0 items-center gap-1">
+                          <Button
+                            type="button"
+                            size="icon"
+                            variant="ghost"
+                            className="h-7 w-7"
+                            disabled={!!togglingSessions[s.sessionId]}
+                            aria-label={s.isFavorite ? t('sessions.favorite.removeSession') : t('sessions.favorite.addSession')}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              toggleSessionFavorite(s.sessionId, s.isFavorite);
+                            }}
+                          >
+                            <Star
+                              className={`h-4 w-4 ${s.isFavorite ? 'fill-amber-400 text-amber-500' : 'text-muted-foreground'}`}
+                            />
+                          </Button>
+                          <span className="text-xs text-muted-foreground">
+                            {formatDistanceToNow(new Date(s.lastMessageAt), { addSuffix: true, locale: dateFnsLocale(locale) })}
+                          </span>
+                        </div>
                       </div>
 
                       <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">

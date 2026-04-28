@@ -75,6 +75,30 @@ export const normalizedMessages = pgTable('normalized_messages', {
   index('idx_nm_source_tool').on(table.sourceTool, table.createdAt),
 ]);
 
+// ==================== session_favorites ====================
+export const sessionFavorites = pgTable('session_favorites', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  userId: uuid('user_id').notNull().references(() => users.id),
+  sessionId: text('session_id').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex('idx_session_favorites_unique').on(table.userId, table.sessionId),
+  index('idx_session_favorites_user').on(table.userId),
+  index('idx_session_favorites_session').on(table.sessionId),
+]);
+
+// ==================== message_favorites ====================
+export const messageFavorites = pgTable('message_favorites', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  userId: uuid('user_id').notNull().references(() => users.id),
+  messageId: uuid('message_id').notNull().references(() => normalizedMessages.id, { onDelete: 'cascade' }),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex('idx_message_favorites_unique').on(table.userId, table.messageId),
+  index('idx_message_favorites_user').on(table.userId),
+  index('idx_message_favorites_message').on(table.messageId),
+]);
+
 // ==================== raw_events ====================
 export const rawEvents = pgTable('raw_events', {
   id: uuid('id').defaultRandom().primaryKey(),

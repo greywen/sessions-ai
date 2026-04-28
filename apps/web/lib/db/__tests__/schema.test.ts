@@ -12,6 +12,8 @@ describe('Database Schema Definition', () => {
     expect(schema.pricingTable).toBeDefined();
     expect(schema.dailyStats).toBeDefined();
     expect(schema.auditLogs).toBeDefined();
+    expect(schema.sessionFavorites).toBeDefined();
+    expect(schema.messageFavorites).toBeDefined();
   });
 
   it('users The table should have the correct required fields', () => {
@@ -38,6 +40,20 @@ describe('Database Schema Definition', () => {
     expect(columns).toContain('sourceTool');
     expect(columns).toContain('role');
     expect(columns).toContain('contentBlocks');
+  });
+
+  it('sessionFavorites The table should have favorite related fields', () => {
+    const columns = Object.keys(schema.sessionFavorites);
+    expect(columns).toContain('id');
+    expect(columns).toContain('userId');
+    expect(columns).toContain('sessionId');
+  });
+
+  it('messageFavorites The table should have favorite related fields', () => {
+    const columns = Object.keys(schema.messageFavorites);
+    expect(columns).toContain('id');
+    expect(columns).toContain('userId');
+    expect(columns).toContain('messageId');
   });
 
   it('pricingTable Table should have price related fields', () => {

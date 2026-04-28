@@ -1,10 +1,10 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { db } from '@/lib/db';
-import { normalizedMessages, machines, users } from '@/lib/db/schema';
+import { normalizedMessages, machines, users, sessionFavorites } from '@/lib/db/schema';
 import { getSession } from '@/lib/auth/session';
 import { logger } from '@/lib/logger';
-import { sql, eq, and, gte, lte, desc, count, min, max, countDistinct, inArray, like } from 'drizzle-orm';
+import { sql, eq, and, gte, lte, desc, count, min, max, countDistinct, inArray } from 'drizzle-orm';
 
 // Query Parameter Verification
 const querySchema = z.object({
@@ -16,6 +16,7 @@ const querySchema = z.object({
   from: z.string().optional(),
   to: z.string().optional(),
   search: z.string().max(200).optional(),
+  favorite: z.enum(['true', 'false']).optional(),
 });
 
 // GET /api/sessions — Sessions list(Preview with user info and first message)
@@ -38,6 +39,7 @@ export async function GET(request: Request) {
       from: searchParams.get('from') ?? undefined,
       to: searchParams.get('to') ?? undefined,
       search: searchParams.get('search') ?? undefined,
+      favorite: searchParams.get('favorite') ?? undefined,
     });
 
     const offset = (params.page - 1) * params.limit;
@@ -79,6 +81,26 @@ export async function GET(request: Request) {
         sql`${normalizedMessages.contentBlocks}::text ILIKE ${'%' + params.search + '%'}`,
       );
     }
+    if (params.favorite === 'true') {
+      conditions.push(sql`
+        EXISTS (
+          SELECT 1
+          FROM session_favorites sf
+          WHERE sf.user_id = ${session.userId}
+            AND sf.session_id = ${normalizedMessages.sessionId}
+        )
+      `);
+    }
+    if (params.favorite === 'false') {
+      conditions.push(sql`
+        NOT EXISTS (
+          SELECT 1
+          FROM session_favorites sf
+          WHERE sf.user_id = ${session.userId}
+            AND sf.session_id = ${normalizedMessages.sessionId}
+        )
+      `);
+    }
 
     const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
 
@@ -93,8 +115,16 @@ export async function GET(request: Request) {
         messageCount: count(normalizedMessages.id).as('message_count'),
         firstMessageAt: min(normalizedMessages.rawTimestamp).as('first_message_at'),
         lastMessageAt: max(normalizedMessages.rawTimestamp).as('last_message_at'),
+        isFavorite: sql<boolean>`MAX(CASE WHEN ${sessionFavorites.id} IS NOT NULL THEN 1 ELSE 0 END) = 1`.as('is_favorite'),
       })
       .from(normalizedMessages)
+      .leftJoin(
+        sessionFavorites,
+        and(
+          eq(sessionFavorites.sessionId, normalizedMessages.sessionId),
+          eq(sessionFavorites.userId, session.userId),
+        ),
+      )
       .where(whereClause)
       .groupBy(
         normalizedMessages.sessionId,
@@ -179,6 +209,7 @@ export async function GET(request: Request) {
       ownerEmail: machineMap[s.machineId]?.ownerEmail ?? null,
       firstUserMessage: firstMessageMap[s.sessionId] ?? null,
       sessionTitle: sessionTitleMap[s.sessionId] ?? null,
+      isFavorite: s.isFavorite,
     }));
 
     const queryDuration = Date.now() - startTime;
