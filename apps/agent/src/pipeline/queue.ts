@@ -32,8 +32,10 @@ interface DiskRow {
 export class MessageQueue {
   private readonly db: Database;
   private readonly buffer: UnifiedMessage[] = [];
-  /** Pending waiter resolvers. */
+  /** Pending consumer-side waiters (woken when a message arrives). */
   private readonly waiters: Array<() => void> = [];
+  /** Pending producer-side waiters (woken when buffer drains below capacity). */
+  private readonly drainWaiters: Array<() => void> = [];
   private closed = false;
 
   constructor(private readonly cfg: QueueConfig) {
@@ -44,16 +46,25 @@ export class MessageQueue {
     );
   }
 
-  push(msg: UnifiedMessage): void {
+  /**
+   * Push a message into the queue. Applies backpressure: if the in-memory
+   * buffer reaches `channelCapacity`, the call awaits until the consumer
+   * drains some space. This protects the server from initial-scan floods
+   * (otherwise tens of thousands of messages would queue in memory and the
+   * uploader/server/Web UI would all be saturated for minutes).
+   */
+  async push(msg: UnifiedMessage): Promise<void> {
+    if (this.closed) throw new Error('Queue is closed');
+    while (this.buffer.length >= this.cfg.channelCapacity && !this.closed) {
+      logger.debug(
+        { size: this.buffer.length, capacity: this.cfg.channelCapacity },
+        'Queue full, applying backpressure to producer',
+      );
+      await this.waitForDrain();
+    }
     if (this.closed) throw new Error('Queue is closed');
     this.buffer.push(msg);
     this.notify();
-    if (this.buffer.length >= this.cfg.channelCapacity && this.buffer.length % 1000 === 0) {
-      logger.warn(
-        { size: this.buffer.length },
-        'In-memory queue is very large, potential backlog risk',
-      );
-    }
   }
 
   /** Recover persisted messages from disk into memory. */
@@ -108,6 +119,9 @@ export class MessageQueue {
       if (!got) break;
     }
 
+    // Wake any producers waiting for capacity
+    if (batch.length > 0) this.notifyDrain();
+
     return batch;
   }
 
@@ -140,6 +154,19 @@ export class MessageQueue {
     }
   }
 
+  private waitForDrain(): Promise<void> {
+    return new Promise((resolve) => {
+      this.drainWaiters.push(resolve);
+    });
+  }
+
+  private notifyDrain() {
+    while (this.drainWaiters.length > 0) {
+      const w = this.drainWaiters.shift();
+      w?.();
+    }
+  }
+
   async close(): Promise<void> {
     if (this.closed) return;
     this.closed = true;
@@ -152,6 +179,7 @@ export class MessageQueue {
       this.buffer.length = 0;
     }
     this.notify();
+    this.notifyDrain();
     this.db.close();
   }
 }

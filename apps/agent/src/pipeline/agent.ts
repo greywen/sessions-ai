@@ -83,7 +83,7 @@ export class Agent {
   async start(): Promise<{ stop: () => Promise<void> }> {
     logger.info(
       { version: this.cfg.agentVersion, server: this.cfg.serverUrl },
-      'llm-sessions Agent starting',
+      'session-vault Agent starting',
     );
 
     mkdirSync(this.cfg.dataDir, { recursive: true });
@@ -161,7 +161,9 @@ export class Agent {
         const { messages, newOffset } = await owner.parseIncremental(filePath, prev);
         if (newOffset !== prev) offsets.set(filePath, newOffset);
         for (const m of messages) {
-          queue.push(m);
+          // `push` applies backpressure when the in-memory buffer is full,
+          // pacing the initial full scan to match upload throughput.
+          await queue.push(m);
         }
         if (messages.length > 0) {
           // Yield to event loop for smoother throughput

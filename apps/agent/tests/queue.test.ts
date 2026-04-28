@@ -83,7 +83,7 @@ describe('MessageQueue', () => {
     const q = new MessageQueue({
       batchSize: 10,
       batchTimeoutSecs: 5,
-      channelCapacity: 2,
+      channelCapacity: 100,
       persistPath: join(dir, 'q'),
     });
     await q.push(makeMsg('m1'));
@@ -109,7 +109,7 @@ describe('MessageQueue', () => {
     await q2.close();
   });
 
-  test('push after close throws', async () => {
+  test('push after close rejects', async () => {
     const q = new MessageQueue({
       batchSize: 3,
       batchTimeoutSecs: 1,
@@ -117,6 +117,35 @@ describe('MessageQueue', () => {
       persistPath: join(dir, 'q'),
     });
     await q.close();
-    expect(() => q.push(makeMsg('x'))).toThrow();
+    await expect(q.push(makeMsg('x'))).rejects.toThrow();
+  });
+
+  test('push applies backpressure when buffer is full', async () => {
+    const q = new MessageQueue({
+      batchSize: 2,
+      batchTimeoutSecs: 1,
+      channelCapacity: 2,
+      persistPath: join(dir, 'q'),
+    });
+    await q.push(makeMsg('a'));
+    await q.push(makeMsg('b'));
+    expect(q.status().inMemory).toBe(2);
+
+    let resolved = false;
+    const pending = q.push(makeMsg('c')).then(() => {
+      resolved = true;
+    });
+    // Yield once; producer should still be blocked on backpressure
+    await new Promise((r) => setTimeout(r, 20));
+    expect(resolved).toBe(false);
+    expect(q.status().inMemory).toBe(2);
+
+    // Consumer drains; producer should unblock and append
+    const batch = await q.consumeBatch();
+    expect(batch.map((m) => m.id)).toEqual(['a', 'b']);
+    await pending;
+    expect(resolved).toBe(true);
+    expect(q.status().inMemory).toBe(1);
+    await q.close();
   });
 });
