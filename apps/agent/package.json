@@ -15,7 +15,8 @@
     "service:install": "bun run scripts/service/install.ts",
     "service:uninstall": "bun run scripts/service/uninstall.ts",
     "service:print": "bun run scripts/service/install.ts --print",
-    "cache:clear": "bun run scripts/clear-cache.ts"
+    "cache:clear": "bun run scripts/clear-cache.ts",
+    "publish:prepare": "bun run scripts/build-publish.ts"
   },
   "dependencies": {
     "@session-vault/shared": "workspace:*",

@@ -2,6 +2,10 @@
 node_modules/
 .pnpm-store/
 
+# Publish artifacts
+apps/agent/publish-pkg/
+apps/agent/dist/
+
 # Next.js
 .next/
 out/
