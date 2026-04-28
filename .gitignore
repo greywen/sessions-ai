@@ -1,0 +1,56 @@
+# Dependence
+node_modules/
+.pnpm-store/
+
+# Next.js
+.next/
+out/
+
+# Tauri / Rust
+target/
+apps/agent/src-tauri/target/
+
+# Environment variables
+.env
+.env.*
+.env.local
+.env.test
+.env.*.local
+!**/.env.example
+!**/.env.*.example
+
+# IDE
+.idea/
+.vscode/settings.json
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Turbo
+.turbo/
+
+# Test and build cache
+coverage/
+.nyc_output/
+dist/
+*.tsbuildinfo
+
+# Temporary
+_tmp_task/
+nul
+
+# Logs
+logs/
+*.log
+pnpm-debug.log*
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Ohters
+.github/copilot-instructions.md
+.playwright-mcp
+docs

@@ -1,0 +1,25 @@
+{
+  "name": "llm-sessions",
+  "private": true,
+  "packageManager": "pnpm@10.30.3",
+  "scripts": {
+    "dev:web": "pnpm --filter web dev",
+    "dev:agent": "pnpm --filter agent dev",
+    "start:agent": "pnpm --filter agent start",
+    "build": "pnpm -r build",
+    "test": "pnpm -r test",
+    "test:agent": "pnpm --filter agent test",
+    "typecheck": "pnpm -r typecheck",
+    "service:install:agent": "pnpm --filter agent service:install",
+    "service:print:agent": "pnpm --filter agent service:print",
+    "service:uninstall:agent": "pnpm --filter agent service:uninstall",
+    "db:generate": "pnpm --filter web db:generate",
+    "db:migrate": "pnpm --filter web db:migrate"
+  },
+  "devDependencies": {
+    "prettier": "^3.5.3"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": ["esbuild", "sharp", "unrs-resolver"]
+  }
+}
