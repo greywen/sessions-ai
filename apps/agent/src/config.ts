@@ -46,10 +46,20 @@ export function defaultDataDir(): string {
 
 const AGENT_VERSION = '0.1.0';
 
+function normalizeToolToken(input: string): string {
+  return input.trim().toLowerCase().replace(/[\s_-]/g, '');
+}
+
+function canonicalToolToken(input: string): string {
+  const normalized = normalizeToolToken(input);
+  if (normalized === 'qcoder' || normalized === 'qoder') return 'qwencode';
+  return normalized;
+}
+
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): AgentConfig {
   const enabled = (env.COLLECT_TOOLS ?? '')
     .split(',')
-    .map((s) => s.trim().toLowerCase())
+    .map((s) => canonicalToolToken(s))
     .filter(Boolean);
   return {
     serverUrl: env.SERVER_URL ?? 'http://localhost:3000',

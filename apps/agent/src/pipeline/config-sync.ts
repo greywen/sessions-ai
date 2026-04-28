@@ -4,6 +4,30 @@ import { dirname, join } from 'node:path';
 
 import { logger } from '../logger.ts';
 
+/** Resolve the OS-specific Cursor settings.json path. */
+function defaultCursorSettingsPath(): string {
+  if (process.platform === 'win32') {
+    return '~/AppData/Roaming/Cursor/User/settings.json';
+  }
+  if (process.platform === 'darwin') {
+    return '~/Library/Application Support/Cursor/User/settings.json';
+  }
+  return '~/.config/Cursor/User/settings.json';
+}
+
+/** Resolve the OS-specific Qwen/Qoder settings.json path. */
+function defaultQwenCodeSettingsPath(): string {
+  if (process.platform === 'win32') {
+    // Qoder desktop stores config here on Windows.
+    return '~/AppData/Roaming/Qoder/User/settings.json';
+  }
+  if (process.platform === 'darwin') {
+    return '~/Library/Application Support/Qoder/User/settings.json';
+  }
+  // Keep linux compatibility with traditional qwen-cli path.
+  return '~/.qwen/settings.json';
+}
+
 /**
  * Default file paths per known config type. Mirrors UI defaults
  * (apps/web/app/(dashboard)/devices/[id]/page.tsx → DEFAULT_FILE_PATHS).
@@ -14,6 +38,8 @@ export const DEFAULT_CONFIG_PATHS: Record<string, string> = {
   openclaw: '~/.openclaw/openclaw.json',
   gemini_cli: '~/.gemini/settings.json',
   codex: '~/.codex/config.toml',
+  cursor: defaultCursorSettingsPath(),
+  qwen_code: defaultQwenCodeSettingsPath(),
 };
 
 export interface LocalConfigReport {

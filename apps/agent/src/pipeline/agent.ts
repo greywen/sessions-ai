@@ -5,6 +5,9 @@ import { join } from 'node:path';
 import type { ToolParser } from '../parser/tool-parser.ts';
 import { OpenCodeParser } from '../parser/opencode.ts';
 import { CopilotParser } from '../parser/copilot.ts';
+import { CodexParser } from '../parser/codex.ts';
+import { CursorParser } from '../parser/cursor.ts';
+import { QwenCodeParser } from '../parser/qwen.ts';
 import { AuthManager } from '../identity/auth.ts';
 import { generateFingerprint } from '../identity/fingerprint.ts';
 import { FileWatcher, type WatchPath } from './watcher.ts';
@@ -96,6 +99,26 @@ function listAllFiles(dir: string, exts: string[]): string[] {
   return out;
 }
 
+function normalizeToolToken(input: string): string {
+  return input.trim().toLowerCase().replace(/[\s_-]/g, '');
+}
+
+function parserToolAliases(toolType: string): string[] {
+  const normalized = normalizeToolToken(toolType);
+  switch (normalized) {
+    case 'githubcopilot':
+      return ['githubcopilot', 'copilot', 'github'];
+    case 'claudecode':
+      return ['claudecode', 'claude'];
+    case 'geminicli':
+      return ['geminicli', 'gemini'];
+    case 'qwencode':
+      return ['qwencode', 'qwen', 'qcoder', 'qoder'];
+    default:
+      return [normalized];
+  }
+}
+
 export class Agent {
   constructor(private readonly cfg: AgentConfig) {}
 
@@ -130,10 +153,18 @@ export class Agent {
 
     // 2) initialize parsers
     const machineId = fp.fingerprint;
-    const allParsers: ToolParser[] = [new OpenCodeParser(machineId), new CopilotParser(machineId)];
+    const allParsers: ToolParser[] = [
+      new OpenCodeParser(machineId),
+      new CopilotParser(machineId),
+      new CodexParser(machineId),
+      new CursorParser(machineId),
+      new QwenCodeParser(machineId),
+    ];
     const enabled = this.cfg.enabledTools;
+    const enabledNormalized = new Set([...enabled].map((item) => normalizeToolToken(item)));
     const parsers = allParsers.filter(
-      (p) => enabled.size === 0 || enabled.has(p.toolType().toLowerCase()),
+      (p) => enabledNormalized.size === 0
+        || parserToolAliases(p.toolType()).some((alias) => enabledNormalized.has(alias)),
     );
     logger.info(
       { tools: parsers.map((p) => p.toolType()) },

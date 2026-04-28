@@ -30,4 +30,5 @@ export const TOOL_COLORS: Record<string, { text: string; bg: string }> = {
   Aider: { text: 'text-red-600', bg: 'bg-red-100' },
   GitHubCopilot: { text: 'text-sky-600', bg: 'bg-sky-100' },
   Codex: { text: 'text-teal-600', bg: 'bg-teal-100' },
+  QwenCode: { text: 'text-orange-600', bg: 'bg-orange-100' },
 } as const;

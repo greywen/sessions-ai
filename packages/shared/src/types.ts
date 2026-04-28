@@ -1,5 +1,13 @@
 // Tool Type Enumeration
-export type ToolType = 'ClaudeCode' | 'OpenCode' | 'Cursor' | 'GeminiCli' | 'Aider' | 'GitHubCopilot' | 'Codex';
+export type ToolType =
+  | 'ClaudeCode'
+  | 'OpenCode'
+  | 'Cursor'
+  | 'GeminiCli'
+  | 'Aider'
+  | 'GitHubCopilot'
+  | 'Codex'
+  | 'QwenCode';
 
 // Message Role Enumeration
 export type MessageRole = 'User' | 'Assistant' | 'System' | 'ToolUse' | 'ToolResult';
