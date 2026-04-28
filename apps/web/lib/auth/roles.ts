@@ -1,4 +1,4 @@
-import type { UserRole } from '@llm-sessions/shared';
+import type { UserRole } from '@session-vault/shared';
 
 const ROLE_HIERARCHY: Record<string, number> = {
   super_admin: 3,

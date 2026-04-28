@@ -1,4 +1,4 @@
-# llm-sessions
+# session-vault
 
 > 跨工具 LLM 会话采集、聚合与治理平台。
 

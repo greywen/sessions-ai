@@ -4,14 +4,14 @@ import { users, pricingTable } from './schema';
 import { hashSync } from 'bcryptjs';
 
 async function seed() {
-  const databaseUrl = process.env.DATABASE_URL || 'postgresql://postgres:123456@localhost:5432/llm_sessions';
+  const databaseUrl = process.env.DATABASE_URL || 'postgresql://postgres:123456@localhost:5432/session_vault';
   const client = postgres(databaseUrl);
   const db = drizzle(client);
 
   console.log('🌱 Start populating seed data...');
 
   // 1. Administrator account
-  const adminEmail = process.env.ADMIN_EMAIL || 'admin@llm-sessions.local';
+  const adminEmail = process.env.ADMIN_EMAIL || 'admin@session-vault.local';
   const adminPassword = process.env.ADMIN_PASSWORD || '123456';
 
   await db.insert(users).values({

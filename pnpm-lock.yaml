@@ -14,7 +14,7 @@ importers:
 
   apps/agent:
     dependencies:
-      '@llm-sessions/shared':
+      '@session-vault/shared':
         specifier: workspace:*
         version: link:../../packages/shared
       chokidar:
@@ -42,7 +42,7 @@ importers:
 
   apps/web:
     dependencies:
-      '@llm-sessions/shared':
+      '@session-vault/shared':
         specifier: workspace:*
         version: link:../../packages/shared
       '@lobehub/icons':

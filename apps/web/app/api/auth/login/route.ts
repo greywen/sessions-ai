@@ -15,13 +15,13 @@ const loginSchema = z.object({
 function normalizeAccount(input: string): string {
   const account = input.trim();
   if (account === 'admin') {
-    return process.env.ADMIN_EMAIL || 'admin@llm-sessions.local';
+    return process.env.ADMIN_EMAIL || 'admin@session-vault.local';
   }
   if (!account.includes('@') && account.includes('/')) {
     return account;
   }
   if (!account.includes('@')) {
-    return `${account}@llm-sessions.local`;
+    return `${account}@session-vault.local`;
   }
   return account;
 }

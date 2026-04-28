@@ -1,5 +1,5 @@
 {
-  "name": "@llm-sessions/agent",
+  "name": "@session-vault/agent",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -18,7 +18,7 @@
     "cache:clear": "bun run scripts/clear-cache.ts"
   },
   "dependencies": {
-    "@llm-sessions/shared": "workspace:*",
+    "@session-vault/shared": "workspace:*",
     "chokidar": "^4.0.3",
     "node-machine-id": "^1.1.12",
     "pino": "^10.3.1",

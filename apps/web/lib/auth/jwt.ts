@@ -10,7 +10,7 @@ const JWT_SECRET = new TextEncoder().encode(
   process.env.JWT_SECRET || 'dev-secret-change-in-production',
 );
 
-const JWT_ISSUER = 'llm-sessions';
+const JWT_ISSUER = 'session-vault';
 const JWT_EXPIRY = '24h';
 
 // Issued by JWT

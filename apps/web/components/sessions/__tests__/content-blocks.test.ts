@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import type { ContentBlock, ContentBlockType } from '@llm-sessions/shared';
+import type { ContentBlock, ContentBlockType } from '@session-vault/shared';
 
 // Test Content Block Type Mapping Table:Ensure that all ContentBlockType have corresponding rendering logic
 const KNOWN_BLOCK_TYPES: ContentBlockType[] = [

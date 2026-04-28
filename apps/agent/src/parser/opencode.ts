@@ -114,7 +114,7 @@ export class OpenCodeParser implements ToolParser {
 
   /** Copy the source DB to a temp directory to avoid SQLite lock conflicts. */
   private copyToTemp(src: string): string {
-    const tmpRoot = join(tmpdir(), 'llm-sessions-opencode');
+    const tmpRoot = join(tmpdir(), 'session-vault-opencode');
     mkdirSync(tmpRoot, { recursive: true });
     const hash = createHash('sha1').update(src).digest('hex').slice(0, 12);
     const dst = join(tmpRoot, `copy_${hash}_${basename(src)}`);

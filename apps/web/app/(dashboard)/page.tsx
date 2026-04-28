@@ -32,7 +32,7 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
-import { TOOL_COLORS } from '@llm-sessions/shared';
+import { TOOL_COLORS } from '@session-vault/shared';
 import { formatDistanceToNow } from 'date-fns';
 import { ToolLogo, getToolLabel } from '@/components/branding/ai-logo';
 import { useI18n } from '@/lib/i18n/provider';

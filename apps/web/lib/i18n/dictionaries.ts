@@ -10,8 +10,8 @@ export type Locale = 'en' | 'zh';
 
 export const SUPPORTED_LOCALES: Locale[] = ['en', 'zh'];
 export const DEFAULT_LOCALE: Locale = 'en';
-export const LOCALE_STORAGE_KEY = 'llm-sessions-locale';
-export const LOCALE_COOKIE_KEY = 'llm-sessions-locale';
+export const LOCALE_STORAGE_KEY = 'session-vault-locale';
+export const LOCALE_COOKIE_KEY = 'session-vault-locale';
 
 export const LOCALE_LABELS: Record<Locale, string> = {
   en: 'English',
@@ -22,7 +22,7 @@ type Dict = Record<string, string>;
 
 const en: Dict = {
   // Common / shared
-  'common.appName': 'llm-sessions',
+  'common.appName': 'session-vault',
   'common.appSubtitle': 'AI Assistant Audit Management System',
   'common.cancel': 'Cancel',
   'common.confirm': 'Confirm',
@@ -62,7 +62,7 @@ const en: Dict = {
   'topbar.title': 'Operations Console',
 
   // Login
-  'login.title': 'llm-sessions',
+  'login.title': 'session-vault',
   'login.subtitle': 'AI Assistant Audit Management System',
   'login.account': 'Account',
   'login.accountPlaceholder': 'admin',
@@ -427,7 +427,7 @@ const en: Dict = {
 
 const zh: Dict = {
   // Common
-  'common.appName': 'llm-sessions',
+  'common.appName': 'session-vault',
   'common.appSubtitle': 'AI 会话管理系统',
   'common.cancel': '取消',
   'common.confirm': '确认',
@@ -467,7 +467,7 @@ const zh: Dict = {
   'topbar.title': '运营控制台',
 
   // Login
-  'login.title': 'llm-sessions',
+  'login.title': 'session-vault',
   'login.subtitle': 'AI 会话管理系统',
   'login.account': '账号',
   'login.accountPlaceholder': 'admin',

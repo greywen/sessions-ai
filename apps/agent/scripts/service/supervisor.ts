@@ -25,7 +25,7 @@ function spawnAgent(): Bun.Subprocess<'inherit', 'inherit', 'inherit'> {
     stderr: 'inherit',
     env: {
       ...process.env,
-      LLM_SESSIONS_SUPERVISED: '1',
+      SESSION_VAULT_SUPERVISED: '1',
     },
   });
 }

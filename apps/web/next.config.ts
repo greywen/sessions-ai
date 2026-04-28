@@ -1,7 +1,7 @@
 import type { NextConfig } from 'next';
 
 const nextConfig: NextConfig = {
-  transpilePackages: ['@llm-sessions/shared'],
+  transpilePackages: ['@session-vault/shared'],
 };
 
 export default nextConfig;

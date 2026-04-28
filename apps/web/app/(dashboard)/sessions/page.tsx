@@ -11,7 +11,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { TimeRangeSelector, getDefaultRange, rangeToIsoBounds, type TimeRangeValue } from '@/components/shared/time-range-selector';
-import { TOOL_COLORS } from '@llm-sessions/shared';
+import { TOOL_COLORS } from '@session-vault/shared';
 import { ToolLogo, getToolLabel } from '@/components/branding/ai-logo';
 import { formatDistanceToNow } from 'date-fns';
 import { useI18n } from '@/lib/i18n/provider';

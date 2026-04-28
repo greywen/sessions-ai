@@ -130,7 +130,7 @@ export async function POST() {
         method: 'GET',
         headers: {
           Accept: 'application/json',
-          'User-Agent': 'llm-sessions-pricing-sync',
+          'User-Agent': 'session-vault-pricing-sync',
         },
         cache: 'no-store',
         signal: controller.signal,

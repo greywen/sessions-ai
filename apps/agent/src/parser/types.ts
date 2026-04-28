@@ -6,4 +6,4 @@ export type {
   ContentBlock,
   TokenUsage,
   UnifiedMessage,
-} from '@llm-sessions/shared';
+} from '@session-vault/shared';

@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import type { ContentBlock } from '@llm-sessions/shared';
+import type { ContentBlock } from '@session-vault/shared';
 import { TextBlock } from './blocks/text-block';
 import { CollapsibleThinking } from './blocks/collapsible-thinking';
 import { SyntaxHighlightedCode } from './blocks/syntax-highlighted-code';

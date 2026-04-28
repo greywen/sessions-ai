@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import type { TokenUsage } from '@llm-sessions/shared';
+import type { TokenUsage } from '@session-vault/shared';
 import { useI18n } from '@/lib/i18n/provider';
 
 interface TokenUsageBarProps {
