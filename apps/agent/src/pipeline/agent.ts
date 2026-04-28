@@ -6,6 +6,7 @@ import type { ToolParser } from '../parser/tool-parser.ts';
 import { OpenCodeParser } from '../parser/opencode.ts';
 import { CopilotParser } from '../parser/copilot.ts';
 import { CodexParser } from '../parser/codex.ts';
+import { ClaudeCodeParser } from '../parser/claude.ts';
 import { CursorParser } from '../parser/cursor.ts';
 import { QwenCodeParser } from '../parser/qwen.ts';
 import { AuthManager } from '../identity/auth.ts';
@@ -155,6 +156,7 @@ export class Agent {
     const machineId = fp.fingerprint;
     const allParsers: ToolParser[] = [
       new OpenCodeParser(machineId),
+      new ClaudeCodeParser(machineId),
       new CopilotParser(machineId),
       new CodexParser(machineId),
       new CursorParser(machineId),
