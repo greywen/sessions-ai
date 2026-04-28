@@ -8,21 +8,23 @@ import { sql } from 'drizzle-orm';
 /**
  * POST /api/admin/recompute-costs
  *
- * 重新计算 normalized_messages.cost_usd / pricing_id。
- * 触发场景：
- *   - 修改了 pricing_table（新增、改价、调整时间窗口）
- *   - 历史数据回填后需要刷新
+ * Recompute normalized_messages.cost_usd and pricing_id.
+ * Trigger scenarios:
+ *   - pricing_table changed (new rows, price updates, or time-window updates)
+ *   - historical backfill requires a refresh
  *
- * 直接在数据库内用 LATERAL JOIN 批量更新（与 lib/cost/compute.ts 的
- * matching 逻辑严格等价：raw -> stripFirst -> stripLast -> 点替换变体；
- * 时间窗口同 pricing_table.effective_from/to）。
+ * Executes an in-database batch update using LATERAL JOIN. Matching logic is
+ * strictly equivalent to lib/cost/compute.ts:
+ * raw -> stripFirst -> stripLast -> dot-to-hyphen variants,
+ * with the same effective_from/effective_to window.
  *
- * 安全：仅 admin 或 CRON_SECRET。
+ * Security: admin session or CRON_SECRET.
  *
- * Query 可选：?from=YYYY-MM-DD&to=YYYY-MM-DD 限定范围（默认全表）。
+ * Optional query: ?from=YYYY-MM-DD&to=YYYY-MM-DD to limit the range
+ * (defaults to full-table recompute).
  */
 export async function POST(request: Request) {
-  // 认证
+  // Authentication
   const cronSecret = request.headers.get('x-cron-secret');
   const expectedSecret = process.env.CRON_SECRET || 'llm-sessions-cron-secret';
   if (cronSecret !== expectedSecret) {

@@ -14,12 +14,12 @@ const querySchema = z.object({
   groupBy: z.enum(['user', 'device', 'tool', 'model']).default('tool'),
 });
 
-// 物化列：cost_usd 在 ingest 阶段已按 pricing 表结算并落库（见
-// lib/cost/compute.ts），读侧直接 SUM 即可，无需 JOIN pricing_table。
+// Materialized column: cost_usd is computed and persisted during ingest (lib/cost/compute.ts).
+// Read-side queries can SUM directly without joining pricing_table.
 const costExpr = sql`nm.cost_usd`;
 const pricingJoin = sql``;
 
-// GET /api/costs — Expense Summary(Direct from normalized_messages Real-time calculation,Do not rely on daily_stats Aggregation)
+// GET /api/costs - expense summary (real-time from normalized_messages; no daily_stats dependency)
 export async function GET(request: Request) {
   try {
     const session = await getSession();

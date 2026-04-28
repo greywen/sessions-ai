@@ -22,6 +22,8 @@ export interface AgentConfig {
    * Parsers read incrementally via offset/time_updated, so rescans are idempotent.
    */
   rescanIntervalSecs: number;
+  /** Interval for polling pending config pushes / read requests (seconds). */
+  configPollIntervalSecs: number;
 }
 
 export function defaultDataDir(): string {
@@ -60,5 +62,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AgentConfig {
     registerMaxPolls: Number(env.REGISTER_MAX_POLLS ?? 360),
     agentVersion: env.AGENT_VERSION ?? AGENT_VERSION,
     rescanIntervalSecs: Number(env.RESCAN_INTERVAL_SECS ?? 30),
+    configPollIntervalSecs: Number(env.CONFIG_POLL_INTERVAL_SECS ?? 15),
   };
 }

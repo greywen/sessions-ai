@@ -1,20 +1,20 @@
 /**
- * 单条消息的 USD 成本计算（TypeScript 端）。
+ * Compute per-message USD cost on the TypeScript side.
  *
- * 与历史 SQL 实现（`pricingJoinForNm` + `costExpr`）等价，但搬到写入侧物化到
- * `normalized_messages.cost_usd`，读侧不再 JOIN pricing_table。
+ * Equivalent to the legacy SQL implementation (`pricingJoinForNm` + `costExpr`),
+ * but moved to write time and materialized into `normalized_messages.cost_usd`,
+ * so read-side queries no longer need to JOIN `pricing_table`.
  *
- * 模型名匹配优先级（与原 LATERAL JOIN 完全等价）：
- *   1. raw                — 去掉前导 `~` 的原始 model 名
- *   2. strip_first        — 去掉第一段 `provider/`
- *   3. strip_last         — 只保留路径最后一段
- *   4. strip_first_hyphen — strip_first 的点替换为 -
- *   5. strip_last_hyphen  — strip_last 的点替换为 -
+ * Model matching priority (fully equivalent to the original LATERAL JOIN):
+ *   1. raw                - original model name with leading `~` removed
+ *   2. strip_first        - remove the first `provider/` segment
+ *   3. strip_last         - keep only the last path segment
+ *   4. strip_first_hyphen - `strip_first` with dots replaced by `-`
+ *   5. strip_last_hyphen  - `strip_last` with dots replaced by `-`
  *
- * 时间窗口：`pricing_table.effective_from <= rawTimestamp <= effective_to`
- * （`effective_to IS NULL` 视为永久有效）。
+ * Time window: `pricing_table.effective_from <= rawTimestamp <= effective_to`
+ * (`effective_to IS NULL` means open-ended validity).
  */
-
 import { inArray } from 'drizzle-orm';
 import type { db as DbType } from '@/lib/db';
 import { pricingTable } from '@/lib/db/schema';

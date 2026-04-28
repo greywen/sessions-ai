@@ -1,15 +1,15 @@
 /**
- * 一次性清理数据库并重新生成 schema
+ * One-time database cleanup and schema regeneration.
  *
- * 流程：
+ * Flow:
  *   1. DROP SCHEMA public CASCADE; CREATE SCHEMA public;
- *   2. drizzle-kit push  —— 直接根据 lib/db/schema.ts 把表结构推到数据库
- *      （跳过 ./drizzle 下的迁移历史，避免迁移冲突）
- *   3. 可选：执行 seed
+ *   2. drizzle-kit push -- apply table structure from lib/db/schema.ts directly
+ *      (skips migration history under ./drizzle to avoid migration conflicts)
+ *   3. Optional: run seed
  *
- * 使用：
- *   pnpm --filter web db:reset            # 仅重置 + push
- *   pnpm --filter web db:reset -- --seed  # 重置 + push + seed
+ * Usage:
+ *   pnpm --filter web db:reset            # reset + push only
+ *   pnpm --filter web db:reset -- --seed  # reset + push + seed
  */
 import postgres from 'postgres';
 import { spawnSync } from 'node:child_process';

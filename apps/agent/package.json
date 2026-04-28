@@ -14,7 +14,8 @@
     "typecheck": "tsc --noEmit",
     "service:install": "bun run scripts/service/install.ts",
     "service:uninstall": "bun run scripts/service/uninstall.ts",
-    "service:print": "bun run scripts/service/install.ts --print"
+    "service:print": "bun run scripts/service/install.ts --print",
+    "cache:clear": "bun run scripts/clear-cache.ts"
   },
   "dependencies": {
     "@llm-sessions/shared": "workspace:*",

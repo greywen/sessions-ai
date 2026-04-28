@@ -10,6 +10,7 @@ import { generateFingerprint } from '../identity/fingerprint.ts';
 import { FileWatcher, type WatchPath } from './watcher.ts';
 import { MessageQueue } from './queue.ts';
 import { BatchUploader } from './uploader.ts';
+import { ConfigSync, readLocalConfigs } from './config-sync.ts';
 import type { AgentConfig } from '../config.ts';
 import { logger, maskKey } from '../logger.ts';
 
@@ -176,6 +177,7 @@ export class Agent {
     };
 
     // 4) consume and upload loop
+    let configSync: ConfigSync | null = null;
     let consuming = true;
     const consumerPromise = (async () => {
       while (consuming) {
@@ -193,6 +195,7 @@ export class Agent {
               auth.clearLocalKey();
               const refreshedAuthKey = await auth.ensureAuthorized(fp, this.cfg.registerMaxPolls);
               uploader.updateAuthKey(refreshedAuthKey);
+              (configSync as ConfigSync | null)?.updateAuthKey(refreshedAuthKey);
               logger.info({ key: maskKey(refreshedAuthKey) }, 'Re-authorization completed, retrying batch once');
               await uploader.uploadBatch(batch);
               continue;
@@ -255,10 +258,28 @@ export class Agent {
       })();
     }, this.cfg.rescanIntervalSecs * 1000);
 
-    // 7) heartbeat loop
-    const heartbeatTimer = setInterval(() => {
-      uploader.sendHeartbeat().catch((err) => logger.warn({ err: String(err) }, 'Heartbeat failed'));
-    }, this.cfg.heartbeatIntervalSecs * 1000);
+    // 7) heartbeat loop (also reports local config files for the dashboard)
+    const sendHeartbeatOnce = () => {
+      let local: Record<string, unknown> | null = null;
+      try {
+        local = readLocalConfigs() as unknown as Record<string, unknown>;
+      } catch (err) {
+        logger.warn({ err: String(err) }, 'Failed to read local configs for heartbeat');
+      }
+      uploader.sendHeartbeat(local).catch((err) => logger.warn({ err: String(err) }, 'Heartbeat failed'));
+    };
+    sendHeartbeatOnce();
+    const heartbeatTimer = setInterval(sendHeartbeatOnce, this.cfg.heartbeatIntervalSecs * 1000);
+
+    // 7.1) Config sync loop — pull pending pushes / read requests from the server,
+    //      apply them locally and report back.
+    configSync = new ConfigSync({
+      serverUrl: this.cfg.serverUrl,
+      authKey,
+      fingerprint: fp.fingerprint,
+      pollIntervalSecs: this.cfg.configPollIntervalSecs,
+    });
+    configSync.start();
 
     logger.info('Agent started and running');
 
@@ -267,6 +288,7 @@ export class Agent {
         logger.info('Agent received stop signal, shutting down gracefully');
         clearInterval(heartbeatTimer);
         clearInterval(rescanTimer);
+        configSync?.stop();
         await watcher.stop();
         consuming = false;
         await queue.close();
