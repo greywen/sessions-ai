@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { eq, and } from 'drizzle-orm';
+import { eq, and, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { db } from '@/lib/db';
 import { machines } from '@/lib/db/schema';
@@ -69,7 +69,16 @@ export async function POST(request: Request) {
       });
     }
 
-    // Buat pending Device History
+    // Buat pending Device History.
+    // Auto-approve the very first device (bootstrap convenience): when the
+    // machines table is empty, register directly as 'active' so the operator
+    // doesn't need a manual approval round-trip on a fresh install.
+    const [{ total } = { total: 0 }] = await db
+      .select({ total: sql<number>`count(*)::int` })
+      .from(machines);
+    const isFirstDevice = Number(total) === 0;
+    const initialStatus: 'pending' | 'active' = isFirstDevice ? 'active' : 'pending';
+
     const [newMachine] = await db
       .insert(machines)
       .values({
@@ -78,11 +87,12 @@ export async function POST(request: Request) {
         displayName: `${data.osInfo.hostname} (${data.osUsername})`,
         osInfo: data.osInfo,
         agentVersion: data.agentVersion,
-        status: 'pending',
+        status: initialStatus,
       })
       .returning({
         id: machines.id,
         status: machines.status,
+        authKey: machines.authKey,
       });
 
     logger.info(
@@ -92,14 +102,16 @@ export async function POST(request: Request) {
         os: data.osInfo.os,
         hostname: data.osInfo.hostname,
         username: data.osUsername,
+        autoApproved: isFirstDevice,
       },
-      'New Device Enrollment',
+      isFirstDevice ? 'First device auto-approved' : 'New Device Enrollment',
     );
 
     return NextResponse.json(
       {
         machineId: newMachine.id,
         status: newMachine.status,
+        authKey: newMachine.status === 'active' ? newMachine.authKey : undefined,
       },
       { status: 201 },
     );

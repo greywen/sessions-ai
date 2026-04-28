@@ -13,11 +13,11 @@
     "service:install:agent": "pnpm --filter agent service:install",
     "service:print:agent": "pnpm --filter agent service:print",
     "service:uninstall:agent": "pnpm --filter agent service:uninstall",
-    "agent:cache:clear": "pnpm --filter agent cache:clear",
+    "agent:cache:clear": "pnpm --filter agent cache:clear ",
     "db:generate": "pnpm --filter web db:generate",
     "db:migrate": "pnpm --filter web db:migrate",
     "db:push": "pnpm --filter web db:push",
-    "db:reset": "pnpm --filter web db:reset",
+    "db:reset": "pnpm --filter web db:reset --seed",
     "db:seed": "pnpm --filter web db:seed"
   },
   "devDependencies": {

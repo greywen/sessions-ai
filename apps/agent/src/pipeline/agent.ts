@@ -14,9 +14,36 @@ import { ConfigSync, readLocalConfigs } from './config-sync.ts';
 import type { AgentConfig } from '../config.ts';
 import { logger, maskKey } from '../logger.ts';
 
+/**
+ * Compute a cheap change-detection signature for a file.
+ *
+ * For SQLite databases the main `.db` mtime only changes at WAL checkpoint,
+ * so we also fold in the sidecar `-wal` and `-shm` mtimes/sizes when present.
+ * Returns null when the file does not exist (caller treats as "skip").
+ */
+function fileSignature(path: string): string | null {
+  try {
+    const st = statSync(path);
+    let sig = `${st.size}:${st.mtimeMs}`;
+    for (const ext of ['-wal', '-shm']) {
+      try {
+        const sub = statSync(path + ext);
+        sig += `|${ext}:${sub.size}:${sub.mtimeMs}`;
+      } catch {
+        // sidecar absent
+      }
+    }
+    return sig;
+  } catch {
+    return null;
+  }
+}
+
 interface OffsetStore {
   get(path: string): number;
+  has(path: string): boolean;
   set(path: string, offset: number): void;
+  isEmpty(): boolean;
   close(): void;
 }
 
@@ -28,12 +55,19 @@ function openOffsetStore(file: string): OffsetStore {
   const setStmt = db.query(
     'INSERT INTO offsets (path, offset) VALUES (?, ?) ON CONFLICT(path) DO UPDATE SET offset = excluded.offset',
   );
+  const countStmt = db.query<{ c: number }, []>('SELECT COUNT(*) AS c FROM offsets');
   return {
     get(p) {
       return getStmt.get(p)?.offset ?? 0;
     },
+    has(p) {
+      return getStmt.get(p) !== null;
+    },
     set(p, o) {
       setStmt.run(p, o);
+    },
+    isEmpty() {
+      return (countStmt.get()?.c ?? 0) === 0;
     },
     close() {
       db.close();
@@ -136,6 +170,11 @@ export class Agent {
 
     const offsets = openOffsetStore(join(this.cfg.dataDir, 'offsets.db'));
 
+    // mtime/size cache: skip parsing files whose disk signature has not changed
+    // since last scan. This is crucial for OpenCode where each parse copies a
+    // multi-hundred-MB SQLite file to temp.
+    const signatureCache = new Map<string, string>();
+
     // Build watch paths per parser
     const watchPaths: WatchPath[] = [];
     const parserOf = new Map<string, ToolParser>(); // dir → parser
@@ -156,10 +195,19 @@ export class Agent {
         }
       }
       if (!owner) return;
+
+      // Cheap mtime/size short-circuit: skip if nothing has changed.
+      const sig = fileSignature(filePath);
+      if (sig === null) return;
+      const cachedSig = signatureCache.get(filePath);
+      if (cachedSig === sig) return;
+
       const prev = offsets.get(filePath);
       try {
         const { messages, newOffset } = await owner.parseIncremental(filePath, prev);
         if (newOffset !== prev) offsets.set(filePath, newOffset);
+        // Record the signature only after a successful parse so failures retry next time.
+        signatureCache.set(filePath, sig);
         for (const m of messages) {
           // `push` applies backpressure when the in-memory buffer is full,
           // pacing the initial full scan to match upload throughput.
@@ -232,7 +280,47 @@ export class Agent {
       return total;
     };
 
-    logger.info('Starting initial full scan');
+    // 5.0) First-install fast seeding.
+    //   On a fresh install, parsing every legacy file would ingest tens of
+    //   thousands of historical messages and freeze the host (CPU + DB writes +
+    //   UI re-renders). For OpenCode in particular, even "parse and emit zero
+    //   rows" is expensive because it copies the entire DB to temp.
+    //
+    //   Use Date.now() as the offset for every existing file: both Copilot
+    //   (modelState.completedAt) and OpenCode (message.time_updated) use
+    //   epoch-millisecond timestamps, so any future activity will satisfy
+    //   `time > install_time` and be picked up. Also seed the signature cache
+    //   so the initial full scan does no I/O on these files.
+    let freshInstall = false;
+    if (offsets.isEmpty()) {
+      freshInstall = true;
+      const seedOffset = Date.now();
+      let seeded = 0;
+      for (const wp of watchPaths) {
+        if (!existsSync(wp.path)) continue;
+        const files = listAllFiles(wp.path, wp.extensions);
+        for (const f of files) {
+          let owner: ToolParser | undefined;
+          for (const [dir, p] of parserOf) {
+            if (f.startsWith(dir) && p.matches(f)) {
+              owner = p;
+              break;
+            }
+          }
+          if (!owner) continue;
+          offsets.set(f, seedOffset);
+          const sig = fileSignature(f);
+          if (sig !== null) signatureCache.set(f, sig);
+          seeded += 1;
+        }
+      }
+      logger.info(
+        { seeded, seedOffset },
+        'Fresh install: seeded watermark to current time; only new sessions will be uploaded',
+      );
+    }
+
+    logger.info({ freshInstall }, 'Starting initial full scan');
     const initialFiles = await fullScan('initial');
     logger.info({ initialFiles }, 'Initial scan completed');
 

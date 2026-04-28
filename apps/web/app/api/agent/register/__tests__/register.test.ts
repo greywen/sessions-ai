@@ -5,6 +5,8 @@ const mockFindFirst = vi.fn();
 const mockInsert = vi.fn();
 const mockValues = vi.fn();
 const mockReturning = vi.fn();
+const mockSelect = vi.fn();
+const mockSelectFrom = vi.fn();
 
 vi.mock('@/lib/db', () => ({
   db: {
@@ -16,6 +18,10 @@ vi.mock('@/lib/db', () => ({
     insert: (...args: unknown[]) => {
       mockInsert(...args);
       return { values: (...vArgs: unknown[]) => { mockValues(...vArgs); return { returning: (...rArgs: unknown[]) => mockReturning(...rArgs) }; } };
+    },
+    select: (...args: unknown[]) => {
+      mockSelect(...args);
+      return { from: (...fArgs: unknown[]) => mockSelectFrom(...fArgs) };
     },
   },
 }));
@@ -41,6 +47,9 @@ vi.mock('@/lib/db/schema', () => ({
 vi.mock('drizzle-orm', () => ({
   eq: vi.fn((_col: unknown, val: unknown) => ({ col: _col, val })),
   and: vi.fn((...conditions: unknown[]) => conditions),
+  sql: Object.assign((..._args: unknown[]) => ({ _sql: true }), {
+    raw: (s: string) => s,
+  }),
 }));
 
 describe('POST /api/agent/register', () => {
@@ -62,7 +71,9 @@ describe('POST /api/agent/register', () => {
 
   it('should be created pending Device and go back 201', async () => {
     mockFindFirst.mockResolvedValue(null);
-    mockReturning.mockResolvedValue([{ id: 'new-uuid', status: 'pending' }]);
+    // Existing devices already in the table → not the first device
+    mockSelectFrom.mockResolvedValue([{ total: 3 }]);
+    mockReturning.mockResolvedValue([{ id: 'new-uuid', status: 'pending', authKey: 'key-pending' }]);
 
     const { POST } = await import('@/app/api/agent/register/route');
     const request = new Request('http://localhost/api/agent/register', {
@@ -77,6 +88,28 @@ describe('POST /api/agent/register', () => {
     expect(response.status).toBe(201);
     expect(data.machineId).toBe('new-uuid');
     expect(data.status).toBe('pending');
+    expect(data.authKey).toBeUndefined();
+  });
+
+  it('First device is auto-approved as active', async () => {
+    mockFindFirst.mockResolvedValue(null);
+    mockSelectFrom.mockResolvedValue([{ total: 0 }]);
+    mockReturning.mockResolvedValue([{ id: 'first-uuid', status: 'active', authKey: 'key-auto' }]);
+
+    const { POST } = await import('@/app/api/agent/register/route');
+    const request = new Request('http://localhost/api/agent/register', {
+      method: 'POST',
+      body: JSON.stringify(validBody),
+      headers: { 'Content-Type': 'application/json' },
+    });
+
+    const response = await POST(request);
+    const data = await response.json();
+
+    expect(response.status).toBe(201);
+    expect(data.machineId).toBe('first-uuid');
+    expect(data.status).toBe('active');
+    expect(data.authKey).toBe('key-auto');
   });
 
   it('Repeat Fingerprint+Username does not create new record', async () => {
