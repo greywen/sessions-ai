@@ -20,13 +20,13 @@ export function TokenUsageBar({ usage }: TokenUsageBarProps) {
   return (
     <div className="flex items-center gap-3 mt-2 pt-2 border-t border-border/50 text-xs font-mono text-muted-foreground">
       <span>📊</span>
-      <span>{t('block.usage.input')}: {formatNum(usage.inputTokens)}</span>
-      <span>{t('block.usage.output')}: {formatNum(usage.outputTokens)}</span>
+      <span>{t('block.usage.input')}: {formatNum(usage.inputTokens)} {t('block.usage.unit')}</span>
+      <span>{t('block.usage.output')}: {formatNum(usage.outputTokens)} {t('block.usage.unit')}</span>
       {usage.cacheReadInputTokens != null && usage.cacheReadInputTokens > 0 && (
-        <span>{t('block.usage.cacheRead')}: {formatNum(usage.cacheReadInputTokens)}</span>
+        <span>{t('block.usage.cacheRead')}: {formatNum(usage.cacheReadInputTokens)} {t('block.usage.unit')}</span>
       )}
       {usage.cacheCreationInputTokens != null && usage.cacheCreationInputTokens > 0 && (
-        <span>{t('block.usage.cacheWrite')}: {formatNum(usage.cacheCreationInputTokens)}</span>
+        <span>{t('block.usage.cacheWrite')}: {formatNum(usage.cacheCreationInputTokens)} {t('block.usage.unit')}</span>
       )}
     </div>
   );

@@ -46,8 +46,10 @@ interface CostData {
 }
 
 function formatCost(value: number): string {
-  if (value >= 1000) return `$${(value / 1000).toFixed(1)}K`;
-  return `$${value.toFixed(2)}`;
+  // Cost is an estimate based on the latest published pricing; signal that
+  // approximation with a leading tilde everywhere it is rendered.
+  if (value >= 1000) return `~$${(value / 1000).toFixed(1)}K`;
+  return `~$${value.toFixed(2)}`;
 }
 
 function formatTokens(value: number): string {
@@ -148,7 +150,7 @@ export default function CostsPage() {
             <DollarSign className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold font-mono tabular-nums">
+            <div className="text-2xl font-bold font-mono tabular-nums" title={t('cost.approximate.tooltip')}>
               {formatCost(data?.summary.totalCostUsd ?? 0)}
             </div>
             <p className="text-xs text-muted-foreground mt-1">

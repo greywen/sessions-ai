@@ -122,7 +122,7 @@ describe('Configuration Management API Schema Correction', () => {
       const result = pushConfigSchema.safeParse({
         configType: 'claude_code',
         configName: 'Claude Configure Manufacturing',
-        filePath: '~/.claude/settings.json',
+        filePath: '~/.claude/settings.local.json',
         configPayload: { permissions: { deny: [] } },
       });
       expect(result.success).toBe(true);
@@ -149,7 +149,7 @@ describe('Configuration Management API Schema Correction', () => {
   describe('POST /api/devices/[id]/config-read Profile Read Request', () => {
     it('Legal file path should be accepted', () => {
       const result = configReadSchema.safeParse({
-        filePath: '~/.claude/settings.json',
+        filePath: '~/.claude/settings.local.json',
       });
       expect(result.success).toBe(true);
     });

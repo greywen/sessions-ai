@@ -75,12 +75,17 @@ export async function POST(request: Request) {
       messages = ingestPayloadSchema.parse(parsed);
     } catch (error) {
       if (error instanceof z.ZodError) {
+        // Log only the issue paths/codes — `error.issues` includes the
+        // received values (full message bodies) which are huge during sync.
+        const issueSummary = error.issues
+          .slice(0, 5)
+          .map((i) => `${i.path.join('.')}: ${i.code}`);
         logger.warn(
-          { machineId: machine.id, errors: error.issues },
+          { machineId: machine.id, issueCount: error.issues.length, issues: issueSummary },
           'Ingest payload Verification failed',
         );
         return NextResponse.json(
-          { error: 'Payload Invalid format', details: error.issues },
+          { error: 'Payload Invalid format' },
           { status: 400 },
         );
       }
@@ -157,8 +162,10 @@ export async function POST(request: Request) {
           });
         accepted += batch.length;
       } catch (dbError) {
+        // Drizzle/pg errors stringify the full SQL + parameter values, which
+        // includes every message's content_blocks JSON. Only keep the message.
         logger.warn(
-          { machineId: machine.id, batchIndex: i, error: dbError },
+          { machineId: machine.id, batchIndex: i, batchSize: batch.length, err: (dbError as Error)?.message ?? String(dbError) },
           'Ingest 批量写入失败,回退到逐条',
         );
         for (const value of values) {
@@ -205,7 +212,7 @@ export async function POST(request: Request) {
         .onConflictDoNothing();
     } catch (rawError) {
       // raw_events Write failure does not affect the mainstream
-      logger.warn({ machineId: machine.id, error: rawError }, 'raw_events failure on writing');
+      logger.warn({ machineId: machine.id, err: (rawError as Error)?.message ?? String(rawError) }, 'raw_events failure on writing');
     }
 
     const duration = Date.now() - startTime;
@@ -221,7 +228,7 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ accepted });
   } catch (error) {
-    logger.error({ error }, 'Ingest Handling Exceptions');
+    logger.error({ err: (error as Error)?.message ?? String(error) }, 'Ingest Handling Exceptions');
     return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
   }
 }

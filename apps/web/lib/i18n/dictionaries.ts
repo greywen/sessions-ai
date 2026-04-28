@@ -411,6 +411,8 @@ const en: Dict = {
   'block.usage.output': 'Output',
   'block.usage.cacheRead': 'Cache read',
   'block.usage.cacheWrite': 'Cache write',
+  'block.usage.unit': 'tokens',
+  'cost.approximate.tooltip': 'Estimated cost based on the latest published pricing. Actual billing may differ.',
 
   // Time range selector
   'timeRange.presets': 'Presets',
@@ -816,6 +818,8 @@ const zh: Dict = {
   'block.usage.output': '输出',
   'block.usage.cacheRead': '缓存读取',
   'block.usage.cacheWrite': '缓存写入',
+  'block.usage.unit': 'tokens',
+  'cost.approximate.tooltip': '基于最新公布价格估算，实际计费可能存在偏差。',
 
   // Time range selector
   'timeRange.presets': '快捷选择',

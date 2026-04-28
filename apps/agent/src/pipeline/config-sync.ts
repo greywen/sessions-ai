@@ -9,10 +9,11 @@ import { logger } from '../logger.ts';
  * (apps/web/app/(dashboard)/devices/[id]/page.tsx → DEFAULT_FILE_PATHS).
  */
 export const DEFAULT_CONFIG_PATHS: Record<string, string> = {
-  claude_code: '~/.claude/settings.json',
-  opencode: '~/.config/opencode/config.json',
-  openclaw: '~/.openclaw/config.json',
+  claude_code: '~/.claude/settings.local.json',
+  opencode: '~/.config/opencode/opencode.json',
+  openclaw: '~/.openclaw/openclaw.json',
   gemini_cli: '~/.gemini/settings.json',
+  codex: '~/.codex/config.toml',
 };
 
 export interface LocalConfigReport {

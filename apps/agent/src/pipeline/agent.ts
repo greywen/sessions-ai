@@ -41,9 +41,7 @@ function fileSignature(path: string): string | null {
 
 interface OffsetStore {
   get(path: string): number;
-  has(path: string): boolean;
   set(path: string, offset: number): void;
-  isEmpty(): boolean;
   close(): void;
 }
 
@@ -55,19 +53,12 @@ function openOffsetStore(file: string): OffsetStore {
   const setStmt = db.query(
     'INSERT INTO offsets (path, offset) VALUES (?, ?) ON CONFLICT(path) DO UPDATE SET offset = excluded.offset',
   );
-  const countStmt = db.query<{ c: number }, []>('SELECT COUNT(*) AS c FROM offsets');
   return {
     get(p) {
       return getStmt.get(p)?.offset ?? 0;
     },
-    has(p) {
-      return getStmt.get(p) !== null;
-    },
     set(p, o) {
       setStmt.run(p, o);
-    },
-    isEmpty() {
-      return (countStmt.get()?.c ?? 0) === 0;
     },
     close() {
       db.close();
@@ -216,8 +207,10 @@ export class Agent {
         if (messages.length > 0) {
           // Yield to event loop for smoother throughput
           await new Promise<void>((r) => setImmediate(r));
+          // Log only the file path + counts, never message bodies. During a
+          // full backfill this can fire thousands of times, so keep it terse.
           logger.info(
-            { path: filePath, parsed: messages.length, prevOffset: prev, newOffset },
+            { path: filePath, parsed: messages.length },
             'Parsed incremental messages',
           );
         }
@@ -280,47 +273,13 @@ export class Agent {
       return total;
     };
 
-    // 5.0) First-install fast seeding.
-    //   On a fresh install, parsing every legacy file would ingest tens of
-    //   thousands of historical messages and freeze the host (CPU + DB writes +
-    //   UI re-renders). For OpenCode in particular, even "parse and emit zero
-    //   rows" is expensive because it copies the entire DB to temp.
-    //
-    //   Use Date.now() as the offset for every existing file: both Copilot
-    //   (modelState.completedAt) and OpenCode (message.time_updated) use
-    //   epoch-millisecond timestamps, so any future activity will satisfy
-    //   `time > install_time` and be picked up. Also seed the signature cache
-    //   so the initial full scan does no I/O on these files.
-    let freshInstall = false;
-    if (offsets.isEmpty()) {
-      freshInstall = true;
-      const seedOffset = Date.now();
-      let seeded = 0;
-      for (const wp of watchPaths) {
-        if (!existsSync(wp.path)) continue;
-        const files = listAllFiles(wp.path, wp.extensions);
-        for (const f of files) {
-          let owner: ToolParser | undefined;
-          for (const [dir, p] of parserOf) {
-            if (f.startsWith(dir) && p.matches(f)) {
-              owner = p;
-              break;
-            }
-          }
-          if (!owner) continue;
-          offsets.set(f, seedOffset);
-          const sig = fileSignature(f);
-          if (sig !== null) signatureCache.set(f, sig);
-          seeded += 1;
-        }
-      }
-      logger.info(
-        { seeded, seedOffset },
-        'Fresh install: seeded watermark to current time; only new sessions will be uploaded',
-      );
-    }
-
-    logger.info({ freshInstall }, 'Starting initial full scan');
+    // 5.0) Initial full scan from offset 0 — uploads ALL historical sessions.
+    //   The MessageQueue applies backpressure via `channelCapacity`, and the
+    //   uploader processes one batch at a time, so even very large backfills
+    //   pace themselves naturally without freezing the host. Each parser is
+    //   incremental (offset / time_updated based), so a single file is only
+    //   parsed once even when the periodic rescan runs.
+    logger.info('Starting initial full scan');
     const initialFiles = await fullScan('initial');
     logger.info({ initialFiles }, 'Initial scan completed');
 

@@ -198,7 +198,7 @@ export default function DashboardPage() {
           </CardHeader>
           <CardContent>
             <div className="flex items-baseline gap-2">
-              <span className="font-mono text-2xl font-bold tabular-nums">${(data?.totalCostUsd ?? 0).toFixed(2)}</span>
+              <span className="font-mono text-2xl font-bold tabular-nums" title={t('cost.approximate.tooltip')}>~${(data?.totalCostUsd ?? 0).toFixed(2)}</span>
               <GrowthIndicator value={data?.growth.cost ?? 0} />
             </div>
           </CardContent>
@@ -238,7 +238,7 @@ export default function DashboardPage() {
             <Cpu className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="font-mono text-xl font-bold tabular-nums">{formatTokenCount(data?.totalTokens ?? 0)}</div>
+            <div className="font-mono text-xl font-bold tabular-nums">{formatTokenCount(data?.totalTokens ?? 0)} <span className="text-xs font-normal text-muted-foreground">{t('block.usage.unit')}</span></div>
           </CardContent>
         </Card>
 
@@ -248,7 +248,7 @@ export default function DashboardPage() {
             <ArrowDownToLine className="h-4 w-4 text-blue-500" />
           </CardHeader>
           <CardContent>
-            <div className="font-mono text-xl font-bold tabular-nums">{formatTokenCount(data?.inputTokens ?? 0)}</div>
+            <div className="font-mono text-xl font-bold tabular-nums">{formatTokenCount(data?.inputTokens ?? 0)} <span className="text-xs font-normal text-muted-foreground">{t('block.usage.unit')}</span></div>
           </CardContent>
         </Card>
 
@@ -258,7 +258,7 @@ export default function DashboardPage() {
             <ArrowUpFromLine className="h-4 w-4 text-emerald-500" />
           </CardHeader>
           <CardContent>
-            <div className="font-mono text-xl font-bold tabular-nums">{formatTokenCount(data?.outputTokens ?? 0)}</div>
+            <div className="font-mono text-xl font-bold tabular-nums">{formatTokenCount(data?.outputTokens ?? 0)} <span className="text-xs font-normal text-muted-foreground">{t('block.usage.unit')}</span></div>
           </CardContent>
         </Card>
 
@@ -268,7 +268,7 @@ export default function DashboardPage() {
             <DatabaseZap className="h-4 w-4 text-amber-500" />
           </CardHeader>
           <CardContent>
-            <div className="font-mono text-xl font-bold tabular-nums">{formatTokenCount((data?.cacheReadTokens ?? 0) + (data?.cacheWriteTokens ?? 0))}</div>
+            <div className="font-mono text-xl font-bold tabular-nums">{formatTokenCount((data?.cacheReadTokens ?? 0) + (data?.cacheWriteTokens ?? 0))} <span className="text-xs font-normal text-muted-foreground">{t('block.usage.unit')}</span></div>
           </CardContent>
         </Card>
       </div>

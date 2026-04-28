@@ -133,10 +133,11 @@ const CONFIG_TYPE_TABS = [
 
 // Default file paths by type
 const DEFAULT_FILE_PATHS: Record<string, string> = {
-  claude_code: '~/.claude/settings.json',
-  opencode: '~/.config/opencode/config.json',
-  openclaw: '~/.openclaw/config.json',
+  claude_code: '~/.claude/settings.local.json',
+  opencode: '~/.config/opencode/opencode.json',
+  openclaw: '~/.openclaw/openclaw.json',
   gemini_cli: '~/.gemini/settings.json',
+  codex: '~/.codex/config.toml',
 };
 
 // Default templates by type
@@ -936,11 +937,11 @@ export default function DeviceDetailPage({ params }: { params: Promise<{ id: str
                 </div>
                 <div className="flex justify-between">
                   <dt className="text-muted-foreground">{t('devices.detail.stats.monthCost')}</dt>
-                  <dd className="font-mono tabular-nums">${Number(device.stats.monthCostUsd).toFixed(2)}</dd>
+                  <dd className="font-mono tabular-nums" title={t('cost.approximate.tooltip')}>~${Number(device.stats.monthCostUsd).toFixed(2)}</dd>
                 </div>
                 <div className="flex justify-between">
                   <dt className="text-muted-foreground">{t('devices.detail.stats.totalTokens')}</dt>
-                  <dd className="font-mono tabular-nums">{device.stats.totalTokens.toLocaleString()}</dd>
+                  <dd className="font-mono tabular-nums">{device.stats.totalTokens.toLocaleString()} {t('block.usage.unit')}</dd>
                 </div>
               </dl>
             </CardContent>
