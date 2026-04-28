@@ -163,7 +163,16 @@ export async function POST() {
 
     const { candidates, skippedInvalid } = dedupeCandidates(payload.data);
     const now = new Date();
-    const effectiveFrom = now.toISOString().slice(0, 10);
+    const today = now.toISOString().slice(0, 10);
+    // Use the earliest message date as fallback effective_from so historical
+    // unpriced rows can be backfilled after sync/recompute.
+    const floorDateRows = await db.execute(sql`
+      SELECT COALESCE(MIN(raw_timestamp::date)::text, ${today}) AS floor_effective_from
+      FROM normalized_messages
+    `);
+    const fallbackEffectiveFrom = String(
+      (floorDateRows as Array<Record<string, unknown>>)[0]?.floor_effective_from ?? today,
+    );
 
     if (candidates.length === 0) {
       return NextResponse.json({
@@ -173,7 +182,7 @@ export async function POST() {
           updated: 0,
           skippedLocked: 0,
           skippedInvalid,
-          effectiveFrom,
+          effectiveFrom: fallbackEffectiveFrom,
         },
       });
     }
@@ -189,9 +198,11 @@ export async function POST() {
     `);
     const lockedModels = new Set<string>();
     const existingModels = new Set<string>();
+    const existingEffectiveFromByModel = new Map<string, string>();
     for (const row of latestRows as Array<Record<string, unknown>>) {
       const model = String(row.model);
       existingModels.add(model);
+      existingEffectiveFromByModel.set(model, String(row.effective_from));
       if (row.sync_locked === true) {
         lockedModels.add(model);
       }
@@ -210,6 +221,12 @@ export async function POST() {
 
       if (existingModels.has(item.model)) updated += 1;
       else inserted += 1;
+
+      const existingEffectiveFrom = existingEffectiveFromByModel.get(item.model);
+      const effectiveFrom =
+        existingEffectiveFrom && existingEffectiveFrom < fallbackEffectiveFrom
+          ? existingEffectiveFrom
+          : fallbackEffectiveFrom;
 
       upsertValues.push({
         provider: item.provider,
@@ -259,7 +276,7 @@ export async function POST() {
           updated,
           skippedLocked,
           skippedInvalid,
-          effectiveFrom,
+          effectiveFrom: fallbackEffectiveFrom,
         },
       });
       auditLogged = true;
@@ -281,7 +298,7 @@ export async function POST() {
         updated,
         skippedLocked,
         skippedInvalid,
-        effectiveFrom,
+        effectiveFrom: fallbackEffectiveFrom,
         auditLogged,
       },
       'OpenRouter pricing sync finished',
@@ -294,7 +311,7 @@ export async function POST() {
         updated,
         skippedLocked,
         skippedInvalid,
-        effectiveFrom,
+        effectiveFrom: fallbackEffectiveFrom,
         auditLogged,
       },
     });

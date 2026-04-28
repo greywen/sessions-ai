@@ -5,6 +5,7 @@ import { toast } from 'sonner';
 import { Plus, Pencil, RefreshCw, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -51,6 +52,8 @@ export default function PricingPage() {
   const [dialogOpen, setDialogOpen] = React.useState(false);
   const [editItem, setEditItem] = React.useState<PricingItem | null>(null);
   const [deleteItem, setDeleteItem] = React.useState<PricingItem | null>(null);
+  const [syncDialogOpen, setSyncDialogOpen] = React.useState(false);
+  const [syncRecomputeMissing, setSyncRecomputeMissing] = React.useState(false);
   const [submitting, setSubmitting] = React.useState(false);
   const [syncing, setSyncing] = React.useState(false);
 
@@ -171,22 +174,45 @@ export default function PricingPage() {
     setSyncing(true);
     try {
       const res = await fetch('/api/pricing/sync/openrouter', { method: 'POST' });
-      const json = await res.json();
+      const json = await res.json().catch(() => null) as {
+        error?: string;
+        data?: {
+          inserted: number;
+          updated: number;
+          skippedLocked: number;
+        };
+      } | null;
       if (!res.ok) {
-        toast.error(json.error || t('common.operationFailed'));
+        toast.error(json?.error || t('common.operationFailed'));
         return;
       }
-      const data = json.data as {
-        inserted: number;
-        updated: number;
-        skippedLocked: number;
+      const data = json?.data ?? {
+        inserted: 0,
+        updated: 0,
+        skippedLocked: 0,
       };
       toast.success(t('pricing.sync.toast.success', {
         inserted: data.inserted,
         updated: data.updated,
         skippedLocked: data.skippedLocked,
       }));
+      setSyncDialogOpen(false);
       fetchPricing();
+
+      if (syncRecomputeMissing) {
+        const recomputeRes = await fetch('/api/admin/recompute-costs?onlyUnpriced=1', { method: 'POST' });
+        const recomputeJson = await recomputeRes.json().catch(() => null) as {
+          error?: string;
+          updatedRows?: number;
+        } | null;
+        if (!recomputeRes.ok) {
+          toast.error(recomputeJson?.error || t('pricing.sync.toast.recomputeMissingFailed'));
+          return;
+        }
+        toast.success(t('pricing.sync.toast.recomputeMissingSuccess', {
+          updatedRows: recomputeJson?.updatedRows ?? 0,
+        }));
+      }
     } catch {
       toast.error(t('pricing.sync.toast.failed'));
     } finally {
@@ -199,7 +225,7 @@ export default function PricingPage() {
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">{t('pricing.title')}</h1>
         <div className="flex items-center gap-2">
-          <Button variant="outline" onClick={handleSyncOpenRouter} disabled={syncing}>
+          <Button variant="outline" onClick={() => setSyncDialogOpen(true)} disabled={syncing}>
             <RefreshCw className={`mr-2 h-4 w-4 ${syncing ? 'animate-spin' : ''}`} />
             {syncing ? t('pricing.syncing') : t('pricing.sync')}
           </Button>
@@ -283,6 +309,40 @@ export default function PricingPage() {
           </TableBody>
         </Table>
       )}
+
+      {/* Sync Dialog */}
+      <Dialog open={syncDialogOpen} onOpenChange={(open) => { if (!syncing) setSyncDialogOpen(open); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t('pricing.sync.dialog.title')}</DialogTitle>
+            <DialogDescription>{t('pricing.sync.dialog.desc')}</DialogDescription>
+          </DialogHeader>
+          <div className="rounded-md border p-3">
+            <div className="flex items-start gap-3">
+              <Checkbox
+                id="pricing-sync-recompute-missing"
+                checked={syncRecomputeMissing}
+                onCheckedChange={(checked) => setSyncRecomputeMissing(checked === true)}
+                disabled={syncing}
+              />
+              <div className="space-y-1 leading-none">
+                <Label htmlFor="pricing-sync-recompute-missing" className="cursor-pointer">
+                  {t('pricing.sync.dialog.recomputeMissing')}
+                </Label>
+                <p className="text-sm text-muted-foreground">{t('pricing.sync.dialog.recomputeMissingHint')}</p>
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setSyncDialogOpen(false)} disabled={syncing}>
+              {t('common.cancel')}
+            </Button>
+            <Button onClick={handleSyncOpenRouter} disabled={syncing}>
+              {syncing ? t('pricing.syncing') : t('common.confirm')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Create/Edit Dialog */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>

@@ -368,6 +368,10 @@ const en: Dict = {
   'pricing.addNew': 'Add Pricing',
   'pricing.sync': 'Sync OpenRouter',
   'pricing.syncing': 'Syncing...',
+  'pricing.sync.dialog.title': 'Sync pricing',
+  'pricing.sync.dialog.desc': 'Sync the pricing table from OpenRouter.',
+  'pricing.sync.dialog.recomputeMissing': 'After sync, recompute sessions without pricing',
+  'pricing.sync.dialog.recomputeMissingHint': 'Only recalculates messages with missing pricing to quickly backfill historical costs.',
   'pricing.submitting': 'Submitting...',
   'pricing.deleting': 'Deleting...',
   'pricing.col.model': 'Model',
@@ -398,6 +402,8 @@ const en: Dict = {
   'pricing.badge.synced': 'Synced',
   'pricing.sync.toast.success': 'Sync complete: +{inserted} new, {updated} updated, {skippedLocked} locked',
   'pricing.sync.toast.failed': 'OpenRouter sync failed',
+  'pricing.sync.toast.recomputeMissingSuccess': 'Recompute complete for unpriced messages: {updatedRows} updated',
+  'pricing.sync.toast.recomputeMissingFailed': 'Sync succeeded, but recompute for unpriced messages failed',
 
   // Session blocks
   'block.thinking': 'Thinking',
@@ -775,6 +781,10 @@ const zh: Dict = {
   'pricing.addNew': '新增定价',
   'pricing.sync': '同步 OpenRouter',
   'pricing.syncing': '同步中…',
+  'pricing.sync.dialog.title': '同步价格',
+  'pricing.sync.dialog.desc': '从 OpenRouter 同步价格表。',
+  'pricing.sync.dialog.recomputeMissing': '同步完成后计算没有价格的会话',
+  'pricing.sync.dialog.recomputeMissingHint': '仅重算尚未匹配价格的消息，快速补齐历史成本。',
   'pricing.submitting': '提交中…',
   'pricing.deleting': '删除中…',
   'pricing.col.model': '模型',
@@ -805,6 +815,8 @@ const zh: Dict = {
   'pricing.badge.synced': '已同步',
   'pricing.sync.toast.success': '同步完成：新增 {inserted} 条，更新 {updated} 条，跳过锁定 {skippedLocked} 条',
   'pricing.sync.toast.failed': 'OpenRouter 同步失败',
+  'pricing.sync.toast.recomputeMissingSuccess': '已完成无价格消息重算：更新 {updatedRows} 条',
+  'pricing.sync.toast.recomputeMissingFailed': '价格同步成功，但无价格消息重算失败',
 
   // Blocks
   'block.thinking': '思考过程',

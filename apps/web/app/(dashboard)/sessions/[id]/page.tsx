@@ -46,17 +46,31 @@ interface MessageItem {
   metadata: Record<string, unknown> | null;
 }
 
+function dedupeMessagesById(messages: MessageItem[]): MessageItem[] {
+  const seen = new Set<string>();
+  const deduped: MessageItem[] = [];
+
+  for (const message of messages) {
+    if (seen.has(message.id)) continue;
+    seen.add(message.id);
+    deduped.push(message);
+  }
+
+  return deduped;
+}
+
 // DAG Rebuild:Extract Main Conversation Chain from Message List
 function reconstructConversation(messages: MessageItem[]): MessageItem[] {
-  if (messages.length === 0) return [];
+  const uniqueMessages = dedupeMessagesById(messages);
+  if (uniqueMessages.length === 0) return [];
 
   const messageMap = new Map<string, MessageItem>();
-  for (const msg of messages) {
+  for (const msg of uniqueMessages) {
     messageMap.set(msg.id, msg);
   }
 
   // Find the last message,Trace Forward Primary Link
-  const lastMessage = messages.reduce((a, b) =>
+  const lastMessage = uniqueMessages.reduce((a, b) =>
     new Date(a.rawTimestamp) > new Date(b.rawTimestamp) ? a : b,
   );
 
@@ -71,19 +85,19 @@ function reconstructConversation(messages: MessageItem[]): MessageItem[] {
   }
 
   // If primary link coverage is insufficient,Fallback to Time Sort
-  if (mainChain.length <= messages.length * 0.5) {
+  if (mainChain.length <= uniqueMessages.length * 0.5) {
     console.debug('[DAGRebuild] Low primary link coverage,Fallback Time Sort', {
       mainChainLength: mainChain.length,
-      totalMessages: messages.length,
+      totalMessages: uniqueMessages.length,
     });
-    return [...messages].sort(
+    return [...uniqueMessages].sort(
       (a, b) => new Date(a.rawTimestamp).getTime() - new Date(b.rawTimestamp).getTime(),
     );
   }
 
   console.debug('[DAGRebuild] Completed', {
     mainChainLength: mainChain.length,
-    totalMessages: messages.length,
+    totalMessages: uniqueMessages.length,
   });
 
   return mainChain;
@@ -102,6 +116,7 @@ export default function SessionDetailPage({ params }: { params: Promise<{ id: st
   const [loadingMore, setLoadingMore] = React.useState(false);
   const [nextCursor, setNextCursor] = React.useState<string | null>(null);
   const [initialLoadDone, setInitialLoadDone] = React.useState(false);
+  const requestedCursorRef = React.useRef<Set<string>>(new Set());
 
   // Get metadata
   const fetchMeta = React.useCallback(async () => {
@@ -118,6 +133,10 @@ export default function SessionDetailPage({ params }: { params: Promise<{ id: st
 
   // Get Messages!(cursor-based)
   const fetchMessages = React.useCallback(async (cursor?: string) => {
+    const cursorKey = cursor ?? '__initial__';
+    if (requestedCursorRef.current.has(cursorKey)) return;
+    requestedCursorRef.current.add(cursorKey);
+
     if (cursor) setLoadingMore(true);
     try {
       const params = new URLSearchParams();
@@ -130,12 +149,13 @@ export default function SessionDetailPage({ params }: { params: Promise<{ id: st
 
       setMessages((prev) => {
         const newMessages = cursor ? [...prev, ...json.data] : json.data;
-        return newMessages;
+        return dedupeMessagesById(newMessages);
       });
       setNextCursor(json.nextCursor);
 
       console.debug('[Session details] Message loading', { count: json.data.length, hasMore: !!json.nextCursor });
     } catch (error) {
+      requestedCursorRef.current.delete(cursorKey);
       toast.error(t('session.detail.toast.messagesFailed'));
       console.error('[Session details] Message request failed:', error);
     } finally {
@@ -144,6 +164,10 @@ export default function SessionDetailPage({ params }: { params: Promise<{ id: st
       setInitialLoadDone(true);
     }
   }, [sessionId, t]);
+
+  React.useEffect(() => {
+    requestedCursorRef.current.clear();
+  }, [sessionId]);
 
   // Initial loading
   React.useEffect(() => {

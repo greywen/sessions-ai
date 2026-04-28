@@ -9,8 +9,9 @@
  *   1. raw                - original model name with leading `~` removed
  *   2. strip_first        - remove the first `provider/` segment
  *   3. strip_last         - keep only the last path segment
- *   4. strip_first_hyphen - `strip_first` with dots replaced by `-`
- *   5. strip_last_hyphen  - `strip_last` with dots replaced by `-`
+ *   4. route_suffix_base  - remove one trailing routing suffix like `-1`
+ *   5. strip_first_hyphen - `strip_first` with dots replaced by `-`
+ *   6. strip_last_hyphen  - `strip_last` with dots replaced by `-`
  *
  * Time window: `pricing_table.effective_from <= rawTimestamp <= effective_to`
  * (`effective_to IS NULL` means open-ended validity).
@@ -44,17 +45,31 @@ export interface CostResult {
 
 const ZERO: CostResult = { costUsd: '0', pricingId: null };
 
+function stripRoutingSuffix(candidate: string): string {
+  return /\.\d/.test(candidate) ? candidate.replace(/-[1-9]$/, '') : candidate;
+}
+
 /** Normalized model name candidates in matching priority order (deduped). */
 export function modelCandidates(model: string | null | undefined): string[] {
   const raw = (model ?? '').replace(/^~/, '');
   if (!raw) return [];
   const stripFirst = raw.replace(/^[^/]+\//, '');
   const stripLast = raw.replace(/^.*\//, '');
+  const stripFirstRouteBase = stripRoutingSuffix(stripFirst);
+  const stripLastRouteBase = stripRoutingSuffix(stripLast);
   const stripFirstHyphen = stripFirst.replace(/\./g, '-');
   const stripLastHyphen = stripLast.replace(/\./g, '-');
   const seen = new Set<string>();
   const out: string[] = [];
-  for (const c of [raw, stripFirst, stripLast, stripFirstHyphen, stripLastHyphen]) {
+  for (const c of [
+    raw,
+    stripFirst,
+    stripLast,
+    stripFirstRouteBase,
+    stripLastRouteBase,
+    stripFirstHyphen,
+    stripLastHyphen,
+  ]) {
     if (c && !seen.has(c)) {
       seen.add(c);
       out.push(c);

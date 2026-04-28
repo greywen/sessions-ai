@@ -15,13 +15,14 @@ import { sql } from 'drizzle-orm';
  *
  * Executes an in-database batch update using LATERAL JOIN. Matching logic is
  * strictly equivalent to lib/cost/compute.ts:
- * raw -> stripFirst -> stripLast -> dot-to-hyphen variants,
+ * raw -> stripFirst -> stripLast -> routing suffix base -> dot-to-hyphen variants,
  * with the same effective_from/effective_to window.
  *
  * Security: admin session or CRON_SECRET.
  *
  * Optional query: ?from=YYYY-MM-DD&to=YYYY-MM-DD to limit the range
  * (defaults to full-table recompute).
+ * Optional query: ?onlyUnpriced=1 to recompute only rows where pricing_id is null.
  */
 export async function POST(request: Request) {
   // Authentication
@@ -37,10 +38,12 @@ export async function POST(request: Request) {
   const { searchParams } = new URL(request.url);
   const from = searchParams.get('from');
   const to = searchParams.get('to');
+  const onlyUnpriced = ['1', 'true', 'yes'].includes((searchParams.get('onlyUnpriced') ?? '').toLowerCase());
 
   const startTime = Date.now();
   try {
     const whereParts = [sql`nm.usage IS NOT NULL`];
+    if (onlyUnpriced) whereParts.push(sql`nm.pricing_id IS NULL`);
     if (from) whereParts.push(sql`nm.raw_timestamp >= ${from}::date`);
     if (to) whereParts.push(sql`nm.raw_timestamp < (${to}::date + INTERVAL '1 day')`);
     const whereClause = sql.join(whereParts, sql` AND `);
@@ -61,26 +64,35 @@ export async function POST(request: Request) {
         FROM normalized_messages nm
         LEFT JOIN LATERAL (
           SELECT pt.id, pt.input_price_per_mtok, pt.output_price_per_mtok, pt.cache_price_per_mtok
-          FROM pricing_table pt
-          WHERE (
-            pt.model = REGEXP_REPLACE(COALESCE(nm.usage->>'model', ''), '^~', '')
-            OR pt.model = REGEXP_REPLACE(REGEXP_REPLACE(COALESCE(nm.usage->>'model', ''), '^~', ''), '^[^/]+/', '')
-            OR pt.model = REGEXP_REPLACE(REGEXP_REPLACE(COALESCE(nm.usage->>'model', ''), '^~', ''), '^.*/', '')
-            OR pt.model = REPLACE(REGEXP_REPLACE(REGEXP_REPLACE(COALESCE(nm.usage->>'model', ''), '^~', ''), '^[^/]+/', ''), '.', '-')
-            OR pt.model = REPLACE(REGEXP_REPLACE(REGEXP_REPLACE(COALESCE(nm.usage->>'model', ''), '^~', ''), '^.*/', ''), '.', '-')
-          )
+          FROM (
+            VALUES
+              (REGEXP_REPLACE(COALESCE(nm.usage->>'model', ''), '^~', ''), 0),
+              (REGEXP_REPLACE(REGEXP_REPLACE(COALESCE(nm.usage->>'model', ''), '^~', ''), '^[^/]+/', ''), 1),
+              (REGEXP_REPLACE(REGEXP_REPLACE(COALESCE(nm.usage->>'model', ''), '^~', ''), '^.*/', ''), 2),
+              (
+                CASE
+                  WHEN REGEXP_REPLACE(REGEXP_REPLACE(COALESCE(nm.usage->>'model', ''), '^~', ''), '^[^/]+/', '') ~ '\\.\\d'
+                  THEN REGEXP_REPLACE(REGEXP_REPLACE(REGEXP_REPLACE(COALESCE(nm.usage->>'model', ''), '^~', ''), '^[^/]+/', ''), '-[1-9]$', '')
+                  ELSE REGEXP_REPLACE(REGEXP_REPLACE(COALESCE(nm.usage->>'model', ''), '^~', ''), '^[^/]+/', '')
+                END,
+                3
+              ),
+              (
+                CASE
+                  WHEN REGEXP_REPLACE(REGEXP_REPLACE(COALESCE(nm.usage->>'model', ''), '^~', ''), '^.*/', '') ~ '\\.\\d'
+                  THEN REGEXP_REPLACE(REGEXP_REPLACE(REGEXP_REPLACE(COALESCE(nm.usage->>'model', ''), '^~', ''), '^.*/', ''), '-[1-9]$', '')
+                  ELSE REGEXP_REPLACE(REGEXP_REPLACE(COALESCE(nm.usage->>'model', ''), '^~', ''), '^.*/', '')
+                END,
+                4
+              ),
+              (REPLACE(REGEXP_REPLACE(REGEXP_REPLACE(COALESCE(nm.usage->>'model', ''), '^~', ''), '^[^/]+/', ''), '.', '-'), 5),
+              (REPLACE(REGEXP_REPLACE(REGEXP_REPLACE(COALESCE(nm.usage->>'model', ''), '^~', ''), '^.*/', ''), '.', '-'), 6)
+          ) AS candidates(model, rank)
+          JOIN pricing_table pt ON pt.model = candidates.model
+          WHERE candidates.model <> ''
             AND pt.effective_from <= nm.raw_timestamp::date
             AND (pt.effective_to IS NULL OR pt.effective_to >= nm.raw_timestamp::date)
-          ORDER BY
-            CASE
-              WHEN pt.model = REGEXP_REPLACE(COALESCE(nm.usage->>'model', ''), '^~', '') THEN 0
-              WHEN pt.model = REGEXP_REPLACE(REGEXP_REPLACE(COALESCE(nm.usage->>'model', ''), '^~', ''), '^[^/]+/', '') THEN 1
-              WHEN pt.model = REGEXP_REPLACE(REGEXP_REPLACE(COALESCE(nm.usage->>'model', ''), '^~', ''), '^.*/', '') THEN 2
-              WHEN pt.model = REPLACE(REGEXP_REPLACE(REGEXP_REPLACE(COALESCE(nm.usage->>'model', ''), '^~', ''), '^[^/]+/', ''), '.', '-') THEN 3
-              WHEN pt.model = REPLACE(REGEXP_REPLACE(REGEXP_REPLACE(COALESCE(nm.usage->>'model', ''), '^~', ''), '^.*/', ''), '.', '-') THEN 4
-              ELSE 5
-            END,
-            pt.effective_from DESC
+          ORDER BY candidates.rank, pt.effective_from DESC
           LIMIT 1
         ) p ON true
         WHERE ${whereClause}
@@ -95,12 +107,16 @@ export async function POST(request: Request) {
     `);
 
     const duration = Date.now() - startTime;
-    logger.info({ from, to, durationMs: duration, rows: result.length }, 'Cost recompute done');
+    const updateResult = result as { rowCount?: number; count?: number; length?: number };
+    const updatedRows = updateResult.rowCount ?? updateResult.count ?? updateResult.length ?? 0;
+    logger.info({ from, to, onlyUnpriced, durationMs: duration, updatedRows }, 'Cost recompute done');
     return NextResponse.json({
       success: true,
       durationMs: duration,
       from: from ?? null,
       to: to ?? null,
+      onlyUnpriced,
+      updatedRows,
     });
   } catch (error) {
     logger.error({ error }, 'Cost recompute failed');
