@@ -3,7 +3,7 @@
   "private": true,
   "packageManager": "pnpm@10.30.3",
   "scripts": {
-    "dev:web": "pnpm --filter web dev",
+    "dev:web": "pnpm --filter web dev --port 23712",
     "dev:agent": "pnpm --filter agent dev",
     "start:agent": "pnpm --filter agent start",
     "build": "pnpm -r build",

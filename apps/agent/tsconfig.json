@@ -15,9 +15,8 @@
     "isolatedModules": true,
     "verbatimModuleSyntax": false,
     "rootDir": "./",
-    "baseUrl": "./",
     "paths": {
-      "@/*": ["src/*"]
+      "@/*": ["./src/*"]
     }
   },
   "include": ["src/**/*", "tests/**/*", "scripts/**/*"]

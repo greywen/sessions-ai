@@ -1,70 +1,129 @@
 # sessions-ai
 
-> 跨工具 LLM 会话采集、聚合与治理平台。
+> 跨工具 LLM 编程助手会话采集、聚合与治理平台。
 
 [English](./README.md) | 中文
 
 ## 目录结构
 
-- `apps/web/` — Next.js 管理后台
-- `apps/agent/` — Bun + TypeScript 终端采集 Agent（重写，跨平台 Win/macOS/Linux）
+- `apps/web/` — Next.js 管理后台 + 上报 API
+- `apps/agent/` — Bun + TypeScript 本地采集 Agent（npm 包名 `sessions-ai`）
 - `packages/shared/` — 跨端共享类型与常量
 
-## 当前阶段
+## 已支持的工具来源
 
-阶段 1：仅完成 OpenCode 消息采集与上报。后续阶段会增加 GitHub Copilot / Codex / Claude Code 解析器。
+Agent 内置以下解析器，全部支持增量采集，按各自的水位线断点续传。
 
-## 快速开始
+| 工具 | 数据源 | 增量键 |
+| --- | --- | --- |
+| OpenCode | `opencode.db`（SQLite） | `MAX(message.time_updated)` |
+| GitHub Copilot Chat | `chatSessions/*.jsonl` | `MAX(modelState.completedAt)` |
+| Codex CLI | `~/.codex/sessions/.../rollout-*.jsonl` | byte offset |
+| Cursor | `Cursor/User/.../state.vscdb` (`cursorDiskKV`) | `MAX(bubble.createdAt)` |
+| Claude Code | `~/.claude/projects/...jsonl` | `MAX(message.timestamp)` |
+| Qwen Code | `~/.qwen/tmp/<hash>/logs.json` | array length |
 
-### 1. 安装依赖
+## 已支持的平台
+
+| 组件 | Windows 10/11 | macOS 12+ | Linux (systemd) |
+| --- | :---: | :---: | :---: |
+| **Agent**（`sessions-ai` CLI） | ✅ Task Scheduler（隐藏窗口） | ✅ launchd LaunchAgent | ✅ `systemd --user` |
+| **Web + Postgres**（Docker） | ✅ Docker Desktop / WSL2 | ✅ Docker Desktop | ✅ 原生 |
+
+> 数据库：PostgreSQL 17+（以仓库内 docker 镜像为准）。
+
+## 快速部署
+
+两条独立通道，互不干扰：
+
+| 组件 | 通道 | 理由 |
+| --- | --- | --- |
+| **Agent**（每台开发机） | `npm i -g sessions-ai` + 系统级 autostart | 单机后台进程 |
+| **Web + DB**（共享服务） | `docker compose up -d` | 多用户共享，强依赖 Postgres |
+
+### 一键安装（Agent）
+
+**Windows**（PowerShell，自动提权到管理员）：
+```powershell
+iwr -useb https://raw.githubusercontent.com/greywen/sessions-ai/main/scripts/install-agent.ps1 -OutFile $env:TEMP\sa.ps1
+powershell -ExecutionPolicy Bypass -File $env:TEMP\sa.ps1 -ServerUrl http://your-host:23712
+```
+
+**macOS / Linux**：
+```bash
+curl -fsSL https://raw.githubusercontent.com/greywen/sessions-ai/main/scripts/install-agent.sh \
+  | bash -s -- --server-url http://your-host:23712
+```
+
+### 一键部署（Web + DB，Docker Compose）
+
+```bash
+# 默认拉取 Docker Hub 镜像
+curl -fsSL https://raw.githubusercontent.com/greywen/sessions-ai/main/scripts/install-web.sh | bash
+
+# 国内用户：拉取阿里云 ACR 镜像（无需翻墙）
+curl -fsSL https://raw.githubusercontent.com/greywen/sessions-ai/main/scripts/install-web.sh \
+  | bash -s -- --image-source aliyun
+```
+
+脚本会在 `~/sessions-ai-web/` 下生成 `docker-compose.yml`、随机密钥的 `.env` 和 `drizzle/` 迁移脚本，启动后访问 `http://localhost:23712`。
+
+完整部署指南、镜像选择、镜像发布流程详见 [docs/deployment.md](./docs/deployment.md)。
+
+## 常用 CLI
+
+```bash
+sessions-ai run                       # 前台单次运行（调试）
+sessions-ai start                     # 前台 supervisor
+sessions-ai service install [opts]    # 安装当前平台 autostart
+sessions-ai service uninstall
+sessions-ai service print             # dry-run，预览生成的产物
+sessions-ai config show
+sessions-ai config set serverUrl http://your-host:23712
+sessions-ai cache clear [--all]
+```
+
+完整 CLI 参考：[apps/agent/NPM_README.md](./apps/agent/NPM_README.md)。
+
+## 本地开发
 
 ```bash
 pnpm install
-```
 
-### 2. 启动 Web
-
-```bash
-cp apps/web/.env.example apps/web/.env.local   # 根据本地 PG 修改
+# Web
+cp apps/web/.env.example apps/web/.env.local
 pnpm db:migrate
 pnpm dev:web
-```
 
-### 3. 启动 Agent（需要 Bun ≥ 1.3）
-
-```bash
+# Agent（需 Bun ≥ 1.3）
 cp apps/agent/.env.example apps/agent/.env
 pnpm dev:agent
+
+# 测试
+pnpm test:agent
 ```
 
-生产/常驻运行：
+monorepo 内的常驻运行：
 
 ```bash
-# 前台常驻（由内置 supervisor 自动拉起崩溃后的 agent 子进程）
 pnpm start:agent
-
-# 预览当前系统会安装什么服务定义（不落地）
 pnpm service:print:agent
-
-# 安装当前平台的自启动 + 常驻守护
 pnpm service:install:agent
-
-# 卸载
 pnpm service:uninstall:agent
 ```
 
-实现方式：
+> Linux 如需用户注销后继续运行：`sudo loginctl enable-linger $USER`
 
-- Windows：Task Scheduler + `run-supervisor.cmd`
-- macOS：`launchd` LaunchAgent + `KeepAlive`
-- Linux：`systemd --user` + `Restart=always`
+## 发布
 
-其中三端都会先启动 `apps/agent/scripts/service/supervisor.ts`，由它负责在 agent 崩溃退出后自动退避重启。
+- **npm 包** (`sessions-ai`)：
+  ```bash
+  cd apps/agent && bun run scripts/build-publish.ts
+  cd publish-pkg && npm publish --access public
+  ```
+- **Docker 镜像**（多架构，同时推送到 Docker Hub + 阿里云 ACR）：
+  ```bash
+  DOCKERHUB_USER=<你> ACR_NAMESPACE=<你> ./scripts/release-docker.sh
+  ```
 
-> Linux 如果希望在用户退出登录后仍继续运行，还需要执行一次 `loginctl enable-linger <username>`。
-
-### 4. 运行 Agent 测试
-
-```bash
-pnpm test:agent
-```
+更多细节见 [docs/deployment.md](./docs/deployment.md)。

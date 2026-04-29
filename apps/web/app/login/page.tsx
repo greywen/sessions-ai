@@ -32,7 +32,7 @@ export default function LoginPage() {
         return;
       }
 
-      // Force a full redirect so middleware auth runs again.
+      // Force a full redirect so proxy auth runs again.
       window.location.href = '/';
     } catch {
       setError(t('login.error.network'));
@@ -84,7 +84,7 @@ export default function LoginPage() {
             <Input
               id="password"
               type="password"
-              placeholder="••••••••"
+              placeholder="******"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required

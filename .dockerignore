@@ -1,0 +1,20 @@
+# Ignore everything by default; explicitly allow the workspace files we copy.
+**
+
+!package.json
+!pnpm-lock.yaml
+!pnpm-workspace.yaml
+!tsconfig*.json
+
+!apps/web/**
+apps/web/node_modules
+apps/web/.next
+apps/web/.tmp-drizzle.log
+apps/web/tsconfig.tsbuildinfo
+apps/web/.env*
+
+!apps/agent/package.json
+
+!packages/shared/**
+packages/shared/node_modules
+packages/shared/dist

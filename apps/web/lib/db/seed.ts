@@ -11,7 +11,7 @@ async function seed() {
   console.log('🌱 Start populating seed data...');
 
   // 1. Administrator account
-  const adminEmail = process.env.ADMIN_EMAIL || 'admin@sessions-ai.local';
+  const adminEmail = process.env.ADMIN_EMAIL || 'sessions-ai';
   const adminPassword = process.env.ADMIN_PASSWORD || '123456';
 
   await db.insert(users).values({

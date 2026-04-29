@@ -1,3 +1,4 @@
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
@@ -56,22 +57,93 @@ function canonicalToolToken(input: string): string {
   return normalized;
 }
 
+/**
+ * Persistent on-disk config (lives at `${dataDir}/config.json`).
+ *
+ * Used by the npm-published CLI so users can configure the agent without
+ * dropping a `.env` file next to the binary. Environment variables still
+ * win over file values, which preserves the dev workflow that uses
+ * `apps/agent/.env`.
+ */
+export interface FileConfig {
+  serverUrl?: string;
+  logLevel?: AgentConfig['logLevel'];
+  heartbeatIntervalSecs?: number;
+  batchSize?: number;
+  batchTimeoutSecs?: number;
+  collectTools?: string[];
+  registerMaxPolls?: number;
+  rescanIntervalSecs?: number;
+  configPollIntervalSecs?: number;
+}
+
+const FILE_CONFIG_KEYS = [
+  'serverUrl',
+  'logLevel',
+  'heartbeatIntervalSecs',
+  'batchSize',
+  'batchTimeoutSecs',
+  'collectTools',
+  'registerMaxPolls',
+  'rescanIntervalSecs',
+  'configPollIntervalSecs',
+] as const satisfies ReadonlyArray<keyof FileConfig>;
+
+export type FileConfigKey = (typeof FILE_CONFIG_KEYS)[number];
+
+export function isFileConfigKey(key: string): key is FileConfigKey {
+  return (FILE_CONFIG_KEYS as readonly string[]).includes(key);
+}
+
+export function fileConfigPath(dataDir: string = process.env.AGENT_DATA_DIR ?? defaultDataDir()): string {
+  return join(dataDir, 'config.json');
+}
+
+export function readFileConfig(dataDir: string = process.env.AGENT_DATA_DIR ?? defaultDataDir()): FileConfig {
+  const path = fileConfigPath(dataDir);
+  if (!existsSync(path)) return {};
+  try {
+    const raw = JSON.parse(readFileSync(path, 'utf8')) as unknown;
+    if (!raw || typeof raw !== 'object') return {};
+    return raw as FileConfig;
+  } catch {
+    return {};
+  }
+}
+
+export function writeFileConfig(
+  patch: FileConfig,
+  dataDir: string = process.env.AGENT_DATA_DIR ?? defaultDataDir(),
+): FileConfig {
+  mkdirSync(dataDir, { recursive: true });
+  const current = readFileConfig(dataDir);
+  const next: FileConfig = { ...current, ...patch };
+  writeFileSync(fileConfigPath(dataDir), JSON.stringify(next, null, 2) + '\n', 'utf8');
+  return next;
+}
+
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): AgentConfig {
-  const enabled = (env.COLLECT_TOOLS ?? '')
-    .split(',')
-    .map((s) => canonicalToolToken(s))
-    .filter(Boolean);
+  const dataDir = env.AGENT_DATA_DIR ?? defaultDataDir();
+  const file = readFileConfig(dataDir);
+
+  const enabledRaw =
+    env.COLLECT_TOOLS !== undefined
+      ? env.COLLECT_TOOLS.split(',')
+      : (file.collectTools ?? []);
+  const enabled = enabledRaw.map((s) => canonicalToolToken(s)).filter(Boolean);
+
   return {
-    serverUrl: env.SERVER_URL ?? 'http://localhost:3000',
-    logLevel: (env.LOG_LEVEL as AgentConfig['logLevel']) ?? 'info',
-    heartbeatIntervalSecs: Number(env.HEARTBEAT_INTERVAL_SECS ?? 60),
-    batchSize: Number(env.BATCH_SIZE ?? 50),
-    batchTimeoutSecs: Number(env.BATCH_TIMEOUT_SECS ?? 5),
-    dataDir: env.AGENT_DATA_DIR ?? defaultDataDir(),
+    serverUrl: env.SERVER_URL ?? file.serverUrl ?? 'http://localhost:23712',
+    logLevel:
+      (env.LOG_LEVEL as AgentConfig['logLevel']) ?? file.logLevel ?? 'info',
+    heartbeatIntervalSecs: Number(env.HEARTBEAT_INTERVAL_SECS ?? file.heartbeatIntervalSecs ?? 60),
+    batchSize: Number(env.BATCH_SIZE ?? file.batchSize ?? 50),
+    batchTimeoutSecs: Number(env.BATCH_TIMEOUT_SECS ?? file.batchTimeoutSecs ?? 5),
+    dataDir,
     enabledTools: new Set(enabled),
-    registerMaxPolls: Number(env.REGISTER_MAX_POLLS ?? 360),
+    registerMaxPolls: Number(env.REGISTER_MAX_POLLS ?? file.registerMaxPolls ?? 360),
     agentVersion: env.AGENT_VERSION ?? AGENT_VERSION,
-    rescanIntervalSecs: Number(env.RESCAN_INTERVAL_SECS ?? 30),
-    configPollIntervalSecs: Number(env.CONFIG_POLL_INTERVAL_SECS ?? 15),
+    rescanIntervalSecs: Number(env.RESCAN_INTERVAL_SECS ?? file.rescanIntervalSecs ?? 30),
+    configPollIntervalSecs: Number(env.CONFIG_POLL_INTERVAL_SECS ?? file.configPollIntervalSecs ?? 15),
   };
 }

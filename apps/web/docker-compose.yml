@@ -1,0 +1,82 @@
+# sessions-ai web stack: PostgreSQL + Next.js admin UI + ingest API.
+#
+# Usage:
+#   cp apps/web/.env.docker.example apps/web/.env.docker  # fill secrets
+#   docker compose -f apps/web/docker-compose.yml --env-file apps/web/.env.docker up -d --build
+#
+# Open http://localhost:23712 — the agent npm package can then be pointed
+# at this URL via:  sessions-ai config set serverUrl http://<host>:23712
+#
+# All build context paths are relative to the *monorepo root*, hence the
+# `context: ../..` and `dockerfile: apps/web/Dockerfile` below.
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-sessions}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-sessions}
+      POSTGRES_DB: ${POSTGRES_DB:-sessions_ai}
+    volumes:
+      - sessions_pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-sessions} -d ${POSTGRES_DB:-sessions_ai}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  migrate:
+    image: postgres:17-alpine
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PGPASSWORD: ${POSTGRES_PASSWORD:-sessions}
+    volumes:
+      - ./drizzle:/migrations:ro
+    entrypoint:
+      - sh
+      - -c
+      - |
+        set -e
+
+        psql -h postgres -U ${POSTGRES_USER:-sessions} -d ${POSTGRES_DB:-sessions_ai} -v ON_ERROR_STOP=1 -c "CREATE TABLE IF NOT EXISTS _schema_migrations (filename text PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now())"
+
+        for f in /migrations/*.sql; do
+          [ -f "$$f" ] || continue
+          name=$$(basename "$$f")
+          safe_name=$$(printf "%s" "$$name" | sed "s/'/''/g")
+          applied=$$(psql -h postgres -U ${POSTGRES_USER:-sessions} -d ${POSTGRES_DB:-sessions_ai} -tA -v ON_ERROR_STOP=1 -c "SELECT 1 FROM _schema_migrations WHERE filename = '$$safe_name' LIMIT 1")
+          if [ "$$applied" = "1" ]; then
+            echo "Skipping $$name (already applied)"
+            continue
+          fi
+
+          echo "Applying $$name"
+          psql -h postgres -U ${POSTGRES_USER:-sessions} -d ${POSTGRES_DB:-sessions_ai} -v ON_ERROR_STOP=1 -f "$$f"
+          psql -h postgres -U ${POSTGRES_USER:-sessions} -d ${POSTGRES_DB:-sessions_ai} -v ON_ERROR_STOP=1 -c "INSERT INTO _schema_migrations (filename) VALUES ('$$safe_name')"
+        done
+    restart: "no"
+
+  web:
+    build:
+      context: ../..
+      dockerfile: apps/web/Dockerfile
+    image: sessions-ai-web:local
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-sessions}:${POSTGRES_PASSWORD:-sessions}@postgres:5432/${POSTGRES_DB:-sessions_ai}
+      JWT_SECRET: ${JWT_SECRET:-please-change-me}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-sessions-ai}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-123456}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      OPENROUTER_MODELS_URL: ${OPENROUTER_MODELS_URL:-https://openrouter.ai/api/v1/models}
+    ports:
+      - "${WEB_PORT:-23712}:23712"
+
+volumes:
+  sessions_pg_data:

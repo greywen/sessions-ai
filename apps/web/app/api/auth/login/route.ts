@@ -3,7 +3,7 @@ import { eq } from 'drizzle-orm';
 import { z } from 'zod';
 import { db } from '@/lib/db';
 import { users } from '@/lib/db/schema';
-import { verifyPassword } from '@/lib/auth/password';
+import { hashPassword, verifyPassword } from '@/lib/auth/password';
 import { createSession } from '@/lib/auth/session';
 import { logger } from '@/lib/logger';
 
@@ -12,18 +12,62 @@ const loginSchema = z.object({
   password: z.string().min(1),
 });
 
-function normalizeAccount(input: string): string {
+const DEFAULT_LOGIN_USERNAME = 'sessions-ai';
+const DEFAULT_LOGIN_PASSWORD = '123456';
+const DEFAULT_LOGIN_EMAIL_DOMAIN = 'sessions-ai.local';
+const DEFAULT_LOGIN_EMAIL_ALIAS = `${DEFAULT_LOGIN_USERNAME}@${DEFAULT_LOGIN_EMAIL_DOMAIN}`;
+const LEGACY_ADMIN_EMAIL = process.env.ADMIN_EMAIL || 'admin@sessions-ai.local';
+
+function toUsernameEmail(username: string): string {
+  return `${username}@${DEFAULT_LOGIN_EMAIL_DOMAIN}`;
+}
+
+function resolveAccountEmails(input: string): string[] {
   const account = input.trim();
-  if (account === 'admin') {
-    return process.env.ADMIN_EMAIL || 'admin@sessions-ai.local';
+  if (!account) {
+    return [];
   }
-  if (!account.includes('@') && account.includes('/')) {
-    return account;
+
+  // Canonical fixed login identity.
+  if (account === DEFAULT_LOGIN_USERNAME || account === DEFAULT_LOGIN_EMAIL_ALIAS) {
+    return [DEFAULT_LOGIN_USERNAME, DEFAULT_LOGIN_EMAIL_ALIAS];
   }
-  if (!account.includes('@')) {
-    return `${account}@sessions-ai.local`;
+
+  const candidates = new Set<string>();
+  if (account.includes('@') || account.includes('/')) {
+    candidates.add(account);
+  } else {
+    candidates.add(account);
+    candidates.add(toUsernameEmail(account));
+    if (account === 'admin') {
+      candidates.add(LEGACY_ADMIN_EMAIL);
+    }
   }
-  return account;
+
+  return [...candidates];
+}
+
+async function ensureFixedDefaultAccount(): Promise<void> {
+  const username = DEFAULT_LOGIN_USERNAME;
+  const email = DEFAULT_LOGIN_USERNAME;
+  const passwordHash = hashPassword(DEFAULT_LOGIN_PASSWORD);
+  await db
+    .insert(users)
+    .values({
+      email,
+      name: username,
+      role: 'super_admin',
+      passwordHash,
+    })
+    .onConflictDoUpdate({
+      target: users.email,
+      set: {
+        name: username,
+        role: 'super_admin',
+        passwordHash,
+        updatedAt: new Date(),
+      },
+    });
 }
 
 export async function POST(request: Request) {
@@ -31,31 +75,34 @@ export async function POST(request: Request) {
     const body = await request.json();
     const { account, password } = loginSchema.parse(body);
     const rawAccount = account.trim();
-    const normalizedAccount = normalizeAccount(rawAccount);
+    const accountEmails = resolveAccountEmails(rawAccount);
 
-    // Find Users: try raw account first, then normalized alias fallback
-    let user = await db.query.users.findFirst({
-      where: eq(users.email, rawAccount),
-    });
+    // Force-create/refresh the fixed default credential in DB.
+    await ensureFixedDefaultAccount();
 
-    if (!user && normalizedAccount !== rawAccount) {
-      user = await db.query.users.findFirst({
-        where: eq(users.email, normalizedAccount),
+    // Try aliases and stop at the first password match.
+    let user: Awaited<ReturnType<typeof db.query.users.findFirst>> | null = null;
+    let foundAlias = false;
+    for (const email of accountEmails) {
+      const candidate = await db.query.users.findFirst({
+        where: eq(users.email, email),
       });
+      if (!candidate) continue;
+      foundAlias = true;
+      if (verifyPassword(password, candidate.passwordHash)) {
+        user = candidate;
+        break;
+      }
     }
 
     if (!user) {
-      logger.info({ account: rawAccount, ip: request.headers.get('x-forwarded-for') }, 'Sign in failed: user not found');
-      return NextResponse.json({ error: 'Email or password is incorrect' }, { status: 401 });
+      logger.info(
+        { account: rawAccount, foundAlias, ip: request.headers.get('x-forwarded-for') },
+        foundAlias ? 'Sign in failed: incorrect password' : 'Sign in failed: user not found',
+      );
+      return NextResponse.json({ error: 'Account or password is incorrect' }, { status: 401 });
     }
 
-    // Verify password
-    if (!verifyPassword(password, user.passwordHash)) {
-      logger.info({ account: rawAccount, resolvedEmail: user.email, ip: request.headers.get('x-forwarded-for') }, 'Sign in failed: incorrect password');
-      return NextResponse.json({ error: 'Email or password is incorrect' }, { status: 401 });
-    }
-
-    // Create Session
     await createSession({
       userId: user.id,
       email: user.email,
@@ -72,7 +119,7 @@ export async function POST(request: Request) {
     });
   } catch (error) {
     if (error instanceof z.ZodError) {
-        return NextResponse.json({ error: 'Invalid login parameters' }, { status: 400 });
+      return NextResponse.json({ error: 'Invalid login parameters' }, { status: 400 });
     }
     logger.error({ error }, 'Login exception');
     return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });

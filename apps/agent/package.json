@@ -6,16 +6,16 @@
   "main": "./src/main.ts",
   "scripts": {
     "dev": "bun run --hot src/main.ts",
-    "start": "bun run scripts/service/supervisor.ts",
-    "start:once": "bun run src/main.ts",
-    "build": "bun build src/main.ts --target=bun --outdir=dist",
+    "start": "bun run src/cli.ts start",
+    "start:once": "bun run src/cli.ts run",
+    "build": "bun build src/cli.ts --target=bun --outdir=dist",
     "test": "bun test",
     "test:watch": "bun test --watch",
     "typecheck": "tsc --noEmit",
-    "service:install": "bun run scripts/service/install.ts",
-    "service:uninstall": "bun run scripts/service/uninstall.ts",
-    "service:print": "bun run scripts/service/install.ts --print",
-    "cache:clear": "bun run scripts/clear-cache.ts",
+    "service:install": "bun run src/cli.ts service install",
+    "service:uninstall": "bun run src/cli.ts service uninstall",
+    "service:print": "bun run src/cli.ts service print",
+    "cache:clear": "bun run src/cli.ts cache clear",
     "publish:prepare": "bun run scripts/build-publish.ts"
   },
   "dependencies": {

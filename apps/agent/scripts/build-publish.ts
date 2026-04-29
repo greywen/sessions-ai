@@ -2,9 +2,10 @@
  * Build a publishable npm package at `apps/agent/publish-pkg/`.
  *
  * Strategy:
- *   - Bundle Agent + `@sessions-ai/shared` into a single `dist/main.js`
- *     with `bun build` (target=bun), so the published package does not
- *     depend on the workspace `shared` package.
+ *   - Bundle Agent + `@sessions-ai/shared` + service installer + supervisor
+ *     into a single `dist/cli.js` with `bun build` (target=bun), so the
+ *     published package does not depend on the workspace `shared` package
+ *     and ships every CLI subcommand in one bundle.
  *   - Externalize heavy npm dependencies (chokidar, pino, pino-pretty,
  *     node-machine-id) — they remain regular `dependencies` in the
  *     published `package.json`.
@@ -33,18 +34,21 @@ const agentDir = resolve(here, '..');
 const monorepoRoot = resolve(agentDir, '..', '..');
 const out = resolve(agentDir, 'publish-pkg');
 
-rmSync(out, { recursive: true, force: true });
+rmSync(join(out, 'dist'), { recursive: true, force: true });
+rmSync(join(out, 'bin'), { recursive: true, force: true });
+rmSync(join(out, 'package.json'), { force: true });
+rmSync(join(out, 'README.md'), { force: true });
 mkdirSync(join(out, 'dist'), { recursive: true });
 mkdirSync(join(out, 'bin'), { recursive: true });
 
 const externals = ['chokidar', 'pino', 'pino-pretty', 'node-machine-id'];
 
-console.log('📦 Bundling agent (bun build) ...');
+console.log('📦 Bundling agent CLI (bun build) ...');
 const buildArgs = [
   'build',
-  join(agentDir, 'src/main.ts'),
+  join(agentDir, 'src/cli.ts'),
   '--target=bun',
-  `--outfile=${join(out, 'dist/main.js')}`,
+  `--outfile=${join(out, 'dist/cli.js')}`,
   ...externals.flatMap((e) => ['--external', e]),
 ];
 const buildResult = spawnSync('bun', buildArgs, { stdio: 'inherit', shell: process.platform === 'win32' });
@@ -55,7 +59,7 @@ if (buildResult.status !== 0) {
 
 console.log('✏️  Writing bin/sessions-ai.js ...');
 const binPath = join(out, 'bin', 'sessions-ai.js');
-writeFileSync(binPath, `#!/usr/bin/env bun\nimport '../dist/main.js';\n`);
+writeFileSync(binPath, `#!/usr/bin/env bun\nimport '../dist/cli.js';\n`);
 try {
   chmodSync(binPath, 0o755);
 } catch {
@@ -71,7 +75,7 @@ const publishPkg = {
   name: 'sessions-ai',
   version: agentPkg.version,
   description:
-    'sessions-ai Agent — local LLM session collector for tools like GitHub Copilot Chat and OpenCode (Bun runtime).',
+    'sessions-ai Agent — local LLM session collector for tools like GitHub Copilot Chat, OpenCode, Codex, Cursor and Qwen Code (Bun runtime).',
   type: 'module',
   bin: { 'sessions-ai': 'bin/sessions-ai.js' },
   files: ['dist', 'bin', 'README.md'],
@@ -79,17 +83,21 @@ const publishPkg = {
   dependencies: Object.fromEntries(
     externals.map((name) => [name, agentPkg.dependencies[name]]).filter(([, v]) => Boolean(v)),
   ),
-  repository: { type: 'git', url: 'git+https://github.com/greywen/SessionVault.git' },
-  homepage: 'https://github.com/greywen/SessionVault',
-  bugs: { url: 'https://github.com/greywen/SessionVault/issues' },
-  keywords: ['llm', 'session', 'audit', 'copilot', 'opencode', 'agent'],
+  repository: { type: 'git', url: 'git+https://github.com/greywen/sessions-ai.git' },
+  homepage: 'https://github.com/greywen/sessions-ai',
+  bugs: { url: 'https://github.com/greywen/sessions-ai/issues' },
+  keywords: ['llm', 'session', 'audit', 'copilot', 'opencode', 'codex', 'cursor', 'agent'],
   license: 'MIT',
 };
 writeFileSync(join(out, 'package.json'), JSON.stringify(publishPkg, null, 2) + '\n');
 
-const readmeSrc = join(monorepoRoot, 'README.md');
-if (existsSync(readmeSrc)) {
-  copyFileSync(readmeSrc, join(out, 'README.md'));
+const dedicatedReadme = join(agentDir, 'NPM_README.md');
+const fallbackReadme = join(monorepoRoot, 'README.md');
+const targetReadme = join(out, 'README.md');
+if (existsSync(dedicatedReadme)) {
+  copyFileSync(dedicatedReadme, targetReadme);
+} else if (existsSync(fallbackReadme)) {
+  copyFileSync(fallbackReadme, targetReadme);
 }
 
 console.log('✅ publish-pkg ready at', out);
