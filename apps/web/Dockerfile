@@ -1,7 +1,7 @@
-# syntax=docker/dockerfile:1.7
+ARG NODE_IMAGE=node:22-alpine
 
 # ---------- Stage 1: deps ----------
-FROM node:22-alpine AS deps
+FROM ${NODE_IMAGE} AS deps
 WORKDIR /repo
 
 # Enable pnpm via Corepack
@@ -17,7 +17,7 @@ RUN --mount=type=cache,id=pnpm,target=/root/.local/share/pnpm/store \
     pnpm install --frozen-lockfile
 
 # ---------- Stage 2: builder ----------
-FROM node:22-alpine AS builder
+FROM ${NODE_IMAGE} AS builder
 WORKDIR /repo
 RUN corepack enable
 
@@ -35,7 +35,7 @@ ENV NEXT_TELEMETRY_DISABLED=1
 RUN pnpm --filter @sessions-ai/web build
 
 # ---------- Stage 3: runner ----------
-FROM node:22-alpine AS runner
+FROM ${NODE_IMAGE} AS runner
 WORKDIR /app
 
 ENV NODE_ENV=production \

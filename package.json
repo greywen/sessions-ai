@@ -18,7 +18,9 @@
     "db:migrate": "pnpm --filter web db:migrate",
     "db:push": "pnpm --filter web db:push",
     "db:reset": "pnpm --filter web db:reset --seed",
-    "db:seed": "pnpm --filter web db:seed"
+    "db:seed": "pnpm --filter web db:seed",
+    "logo:build": "node ./scripts/build-logo-assets.mjs",
+    "release:docker": "bash ./scripts/release-docker.sh"
   },
   "devDependencies": {
     "prettier": "^3.5.3"

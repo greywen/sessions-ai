@@ -11,8 +11,16 @@ import {
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'sessions-ai - AI Assistant Audit Management',
+  title: 'Sessions-ai - AI Assistant Audit Management',
   description: 'Enterprise distributed AI assistant audit & remote configuration management system',
+  icons: {
+    icon: [
+      { url: '/favicon.ico', sizes: 'any' },
+      { url: '/icon.png', type: 'image/png' },
+    ],
+    shortcut: [{ url: '/favicon.ico' }],
+    apple: [{ url: '/apple-touch-icon.png', sizes: '180x180', type: 'image/png' }],
+  },
 };
 
 function isSupportedLocale(value: string | null | undefined): value is Locale {

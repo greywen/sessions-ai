@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { Shield } from 'lucide-react';
+import Image from 'next/image';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useI18n } from '@/lib/i18n/provider';
@@ -51,8 +51,8 @@ export default function LoginPage() {
 
       <div className="relative w-full max-w-sm space-y-6 rounded-2xl border border-border bg-card/95 p-6 backdrop-blur">
         <div className="flex flex-col items-center gap-2">
-          <span className="inline-flex h-11 w-11 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-[inset_0_0.5px_0_rgba(255,255,255,0.2),inset_0_0_0_0.5px_rgba(0,0,0,0.2),0_1px_2px_rgba(0,0,0,0.05)]">
-            <Shield className="h-5 w-5" />
+          <span className="inline-flex h-16 w-16 items-center justify-center overflow-hidden rounded-full shadow-[inset_0_0.5px_0_rgba(255,255,255,0.2),inset_0_0_0_0.5px_rgba(0,0,0,0.2),0_1px_2px_rgba(0,0,0,0.05)]">
+            <Image src="/brand/logo.png" alt={t('common.appName')} width={64} height={64} className="h-full w-full object-cover" />
           </span>
           <h1 className="text-3xl font-semibold tracking-[-0.03em]">{t('login.title')}</h1>
           <p className="text-sm text-muted-foreground">{t('login.subtitle')}</p>

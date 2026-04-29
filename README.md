@@ -2,6 +2,10 @@
 
 > A cross-tool platform for collecting, aggregating, and governing LLM coding-assistant sessions.
 
+<p align="center">
+  <img src="./.github/assets/logo.png" alt="sessions-ai logo" width="180" />
+</p>
+
 English | [中文](./README.zh-CN.md)
 
 ## Project structure
@@ -60,15 +64,11 @@ curl -fsSL https://raw.githubusercontent.com/greywen/sessions-ai/main/scripts/in
 ```bash
 # Default — pulls greywen/sessions-ai-web:latest from Docker Hub
 curl -fsSL https://raw.githubusercontent.com/greywen/sessions-ai/main/scripts/install-web.sh | bash
-
-# China users — pulls from Aliyun ACR (no VPN needed)
-curl -fsSL https://raw.githubusercontent.com/greywen/sessions-ai/main/scripts/install-web.sh \
-  | bash -s -- --image-source aliyun
 ```
 
 The script writes `~/sessions-ai-web/{docker-compose.yml,.env,drizzle/}` with random secrets, runs migrations, and starts the stack on `http://localhost:23712`.
 
-For manual steps, registry choices, and image publishing, see [docs/deployment.md](./docs/deployment.md).
+For manual steps and image publishing, see [docs/deployment.md](./docs/deployment.md).
 
 ## CLI reference (excerpt)
 
@@ -119,9 +119,10 @@ pnpm service:uninstall:agent
   cd apps/agent && bun run scripts/build-publish.ts
   cd publish-pkg && npm publish --access public
   ```
-- **Docker image** (multi-arch, pushes to Docker Hub + Aliyun ACR):
+- **Docker image** (multi-arch, pushes to Docker Hub):
   ```bash
-  DOCKERHUB_USER=<you> ACR_NAMESPACE=<you> ./scripts/release-docker.sh
+  DOCKERHUB_USER=<you> pnpm release:docker
+  pnpm release:docker -- v0.2.0
   ```
 
 See [docs/deployment.md](./docs/deployment.md) for the full deployment + release guide.

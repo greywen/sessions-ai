@@ -2,6 +2,11 @@
 
 > 跨工具 LLM 编程助手会话采集、聚合与治理平台。
 
+<p align="center">
+  <img src="./.github/assets/logo.png" alt="sessions-ai logo" width="180" />
+</p>
+
+
 [English](./README.md) | 中文
 
 ## 目录结构
@@ -60,15 +65,11 @@ curl -fsSL https://raw.githubusercontent.com/greywen/sessions-ai/main/scripts/in
 ```bash
 # 默认拉取 Docker Hub 镜像
 curl -fsSL https://raw.githubusercontent.com/greywen/sessions-ai/main/scripts/install-web.sh | bash
-
-# 国内用户：拉取阿里云 ACR 镜像（无需翻墙）
-curl -fsSL https://raw.githubusercontent.com/greywen/sessions-ai/main/scripts/install-web.sh \
-  | bash -s -- --image-source aliyun
 ```
 
 脚本会在 `~/sessions-ai-web/` 下生成 `docker-compose.yml`、随机密钥的 `.env` 和 `drizzle/` 迁移脚本，启动后访问 `http://localhost:23712`。
 
-完整部署指南、镜像选择、镜像发布流程详见 [docs/deployment.md](./docs/deployment.md)。
+完整部署指南与镜像发布流程详见 [docs/deployment.md](./docs/deployment.md)。
 
 ## 常用 CLI
 
@@ -121,9 +122,10 @@ pnpm service:uninstall:agent
   cd apps/agent && bun run scripts/build-publish.ts
   cd publish-pkg && npm publish --access public
   ```
-- **Docker 镜像**（多架构，同时推送到 Docker Hub + 阿里云 ACR）：
+- **Docker 镜像**（多架构，推送到 Docker Hub）：
   ```bash
-  DOCKERHUB_USER=<你> ACR_NAMESPACE=<你> ./scripts/release-docker.sh
+  DOCKERHUB_USER=<你> pnpm release:docker
+  pnpm release:docker -- v0.2.0
   ```
 
 更多细节见 [docs/deployment.md](./docs/deployment.md)。

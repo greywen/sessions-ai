@@ -2,6 +2,7 @@
 
 import React from 'react';
 import Link from 'next/link';
+import Image from 'next/image';
 import { usePathname } from 'next/navigation';
 import {
   LayoutDashboard,
@@ -13,7 +14,6 @@ import {
   CreditCard,
   ChevronLeft,
   ChevronRight,
-  Shield,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -97,8 +97,8 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
       >
         <div className="flex h-14 items-center border-b border-sidebar-border px-4">
           <Link href="/" className="flex items-center gap-2">
-            <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-[inset_0_0.5px_0_rgba(255,255,255,0.2),inset_0_0_0_0.5px_rgba(0,0,0,0.2),0_1px_2px_rgba(0,0,0,0.05)]">
-              <Shield className="h-4 w-4" />
+            <span className="inline-flex h-8 w-8 items-center justify-center overflow-hidden rounded-full border border-sidebar-border bg-white shadow-[inset_0_0.5px_0_rgba(255,255,255,0.2),inset_0_0_0_0.5px_rgba(0,0,0,0.2),0_1px_2px_rgba(0,0,0,0.05)]">
+              <Image src="/brand/logo.png" alt={t('common.appName')} width={64} height={64} className="h-full w-full object-cover" />
             </span>
             {!collapsed && (
               <div className="leading-tight">

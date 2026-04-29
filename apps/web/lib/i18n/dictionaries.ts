@@ -22,7 +22,7 @@ type Dict = Record<string, string>;
 
 const en: Dict = {
   // Common / shared
-  'common.appName': 'sessions-ai',
+  'common.appName': 'Sessions-AI',
   'common.appSubtitle': 'AI Assistant Audit Management System',
   'common.cancel': 'Cancel',
   'common.confirm': 'Confirm',
@@ -62,7 +62,7 @@ const en: Dict = {
   'topbar.title': 'Operations Console',
 
   // Login
-  'login.title': 'sessions-ai',
+  'login.title': 'Sessions-AI',
   'login.subtitle': 'AI Assistant Audit Management System',
   'login.account': 'Account',
   'login.accountPlaceholder': 'sessions-ai',
@@ -443,7 +443,7 @@ const en: Dict = {
 
 const zh: Dict = {
   // Common
-  'common.appName': 'sessions-ai',
+  'common.appName': 'Sessions-ai',
   'common.appSubtitle': 'AI 会话管理系统',
   'common.cancel': '取消',
   'common.confirm': '确认',

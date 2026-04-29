@@ -3,7 +3,7 @@
 #
 # Usage:
 #   curl -fsSL https://raw.githubusercontent.com/greywen/sessions-ai/main/scripts/install-web.sh | bash
-#   ./scripts/install-web.sh [--dir /opt/sessions-ai] [--port 23712] [--image-source dockerhub|aliyun|local]
+#   ./scripts/install-web.sh [--dir /opt/sessions-ai] [--port 23712] [--image-source dockerhub|local]
 #
 # What it does:
 #   1. Downloads docker-compose.yml + .env template into target dir
@@ -12,7 +12,6 @@
 #
 # Image sources:
 #   dockerhub  → greywen/sessions-ai-web:latest         (default, requires Docker Hub access)
-#   aliyun     → registry.cn-hangzhou.aliyuncs.com/greywen/sessions-ai-web:latest  (CN mirror)
 #   local      → builds from local repo checkout (must run inside cloned repo)
 
 set -euo pipefail
@@ -43,9 +42,8 @@ docker compose version >/dev/null 2>&1 || die "Docker Compose v2 plugin required
 
 case "$IMAGE_SOURCE" in
   dockerhub) IMAGE="greywen/sessions-ai-web:latest" ;;
-  aliyun)    IMAGE="registry.cn-hangzhou.aliyuncs.com/greywen/sessions-ai-web:latest" ;;
   local)     IMAGE="" ;;
-  *) die "--image-source must be one of: dockerhub, aliyun, local" ;;
+  *) die "--image-source must be one of: dockerhub, local" ;;
 esac
 
 mkdir -p "$TARGET_DIR"
@@ -74,7 +72,7 @@ fi
 if [ "$IMAGE_SOURCE" = "local" ]; then
   log "Using local build from current repo. Make sure you are in the cloned sessions-ai monorepo."
   COMPOSE_FILE="apps/web/docker-compose.yml"
-  [ -f "$COMPOSE_FILE" ] || die "Cannot find $COMPOSE_FILE — run from monorepo root or use --image-source dockerhub|aliyun"
+  [ -f "$COMPOSE_FILE" ] || die "Cannot find $COMPOSE_FILE — run from monorepo root or use --image-source dockerhub"
   docker compose -f "$COMPOSE_FILE" --env-file "$TARGET_DIR/.env" up -d --build
 else
   log "Downloading SQL migrations into ./drizzle/ ..."
