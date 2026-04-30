@@ -80,7 +80,9 @@ sessions-ai run                       # Foreground, single run (debug)
 sessions-ai start                     # Foreground supervisor
 sessions-ai service install [opts]    # Autostart on Win / macOS / Linux
 sessions-ai service uninstall
+sessions-ai service status
 sessions-ai service print             # Dry-run, preview generated artifacts
+sessions-ai status                    # Alias of: sessions-ai service status
 sessions-ai config show
 sessions-ai config set serverUrl http://localhost:23712
 sessions-ai cache clear [--all]

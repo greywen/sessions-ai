@@ -29,7 +29,8 @@ function Test-Admin {
 
 if (-not (Test-Admin)) {
   Write-Host '[sessions-ai] Re-launching as Administrator...' -ForegroundColor Yellow
-  $argv = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', "`"$PSCommandPath`"")
+  # Keep elevated window open so users can see progress/result clearly.
+  $argv = @('-NoLogo', '-NoProfile', '-NoExit', '-ExecutionPolicy', 'Bypass', '-File', "`"$PSCommandPath`"")
   if ($ServerUrl) { $argv += @('-ServerUrl', $ServerUrl) }
   if ($NoService) { $argv += '-NoService' }
   Start-Process -FilePath 'powershell.exe' -Verb RunAs -ArgumentList $argv
@@ -169,6 +170,7 @@ if (-not $NoService) {
 
 Write-Host ''
 Write-Host 'Useful commands:' -ForegroundColor Cyan
+Write-Host '  sessions-ai status'
 Write-Host '  sessions-ai config show'
 Write-Host '  sessions-ai config path'
 if (-not $NoService) {
