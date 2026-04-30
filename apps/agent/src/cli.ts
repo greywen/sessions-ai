@@ -7,7 +7,9 @@
  *   sessions-ai start                        # Run agent under built-in supervisor (foreground)
  *   sessions-ai service install [--print] [--no-start]
  *   sessions-ai service uninstall
+ *   sessions-ai service status
  *   sessions-ai service print                # Alias for `service install --print`
+ *   sessions-ai status                       # Alias for: service status
  *   sessions-ai config show
  *   sessions-ai config path
  *   sessions-ai config set <key> <value>
@@ -45,7 +47,9 @@ Usage:
                                           --print     Preview only, do not install
                                           --no-start  Install but do not start now
   sessions-ai service uninstall         Remove autostart service
+  sessions-ai service status            Show service runtime status
   sessions-ai service print             Alias for: service install --print
+  sessions-ai status                    Alias for: service status
   sessions-ai config show               Print effective configuration
   sessions-ai config path               Print config file path
   sessions-ai config set <key> <value>  Persist a setting to config.json
@@ -98,6 +102,11 @@ async function cmdServiceInstall(rest: string[]): Promise<void> {
 async function cmdServiceUninstall(): Promise<void> {
   const { uninstallService } = await import('./service/uninstall.ts');
   await uninstallService();
+}
+
+async function cmdServiceStatus(): Promise<void> {
+  const { printServiceStatus } = await import('./service/status.ts');
+  await printServiceStatus();
 }
 
 function cmdConfigShow(): void {
@@ -231,15 +240,21 @@ async function dispatch(argv: string[]): Promise<void> {
         case 'uninstall':
           await cmdServiceUninstall();
           return;
+        case 'status':
+          await cmdServiceStatus();
+          return;
         case 'print':
           await cmdServiceInstall(['--print', ...rest]);
           return;
         default:
-          console.error('Usage: sessions-ai service <install|uninstall|print> [options]');
+          console.error('Usage: sessions-ai service <install|uninstall|status|print> [options]');
           process.exit(2);
       }
       return;
     }
+    case 'status':
+      await cmdServiceStatus();
+      return;
     case 'config': {
       switch (sub) {
         case 'show':

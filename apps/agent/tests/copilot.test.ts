@@ -879,3 +879,140 @@ describe('CopilotParser - 元数据/标题/Token 同步', () => {
     expect(r.messages).toHaveLength(0);
   });
 });
+
+describe('CopilotParser - workspaceEdit / textEditGroup -> FileEdit', () => {
+  test('textEditGroup with oldText produces FileEdit + diff', async () => {
+    const file = writeJsonl([
+      {
+        kind: 0,
+        v: {
+          requests: [
+            buildRequest({
+              requestId: 'req-edit-1',
+              text: 'do edit',
+              timestamp: 1000,
+              completedAt: 2000,
+              response: [
+                {
+                  kind: 'textEditGroup',
+                  uri: { path: '/repo/src/a.ts', scheme: 'file' },
+                  edits: [
+                    [
+                      {
+                        range: { startLineNumber: 1, endLineNumber: 1, startColumn: 1, endColumn: 4 },
+                        newText: 'bar',
+                        oldText: 'foo',
+                      },
+                    ],
+                  ],
+                },
+              ],
+            }),
+          ],
+          inputState: {},
+        },
+      },
+    ]);
+    const p = new CopilotParser('m1');
+    const r = await p.parseIncremental(file, 0);
+    const asst = r.messages[1];
+    const editBlock = asst.contentBlocks.find((b) => b.blockType === 'FileEdit');
+    expect(editBlock).toBeDefined();
+    expect(editBlock!.filePath).toBe('/repo/src/a.ts');
+    expect(editBlock!.diff).toContain('-foo');
+    expect(editBlock!.diff).toContain('+bar');
+    const meta = (editBlock!.toolInput as Record<string, unknown>).editMeta as Record<string, unknown>;
+    expect(meta.operation).toBe('update');
+    expect(meta.status).toBe('applied');
+  });
+
+  test('textEditGroup without oldText still emits FileEdit but diff=null', async () => {
+    const file = writeJsonl([
+      {
+        kind: 0,
+        v: {
+          requests: [
+            buildRequest({
+              requestId: 'req-edit-2',
+              text: 'edit without old',
+              timestamp: 1000,
+              completedAt: 2000,
+              response: [
+                {
+                  kind: 'textEditGroup',
+                  uri: { path: '/repo/b.ts' },
+                  edits: [
+                    [
+                      {
+                        range: { startLineNumber: 5, endLineNumber: 5, startColumn: 1, endColumn: 1 },
+                        newText: 'new content here',
+                      },
+                    ],
+                  ],
+                },
+              ],
+            }),
+          ],
+          inputState: {},
+        },
+      },
+    ]);
+    const p = new CopilotParser('m1');
+    const r = await p.parseIncremental(file, 0);
+    const asst = r.messages[1];
+    const editBlock = asst.contentBlocks.find((b) => b.blockType === 'FileEdit')!;
+    expect(editBlock.filePath).toBe('/repo/b.ts');
+    expect(editBlock.diff).toBeNull();
+    expect(editBlock.content).toContain('L5-L5');
+  });
+
+  test('workspaceEdit produces one FileEdit per file', async () => {
+    const file = writeJsonl([
+      {
+        kind: 0,
+        v: {
+          requests: [
+            buildRequest({
+              requestId: 'req-edit-3',
+              text: 'multi file edit',
+              timestamp: 1000,
+              completedAt: 2000,
+              response: [
+                {
+                  kind: 'workspaceEdit',
+                  edits: [
+                    {
+                      resource: { path: '/repo/x.ts' },
+                      textEdit: { range: {}, newText: 'X', oldText: 'x' },
+                    },
+                    {
+                      resource: { path: '/repo/y.ts' },
+                      textEdit: { range: {}, newText: 'Y', oldText: 'y' },
+                    },
+                    {
+                      resource: { path: '/repo/x.ts' },
+                      textEdit: { range: {}, newText: 'X2', oldText: 'x2' },
+                    },
+                  ],
+                },
+              ],
+            }),
+          ],
+          inputState: {},
+        },
+      },
+    ]);
+    const p = new CopilotParser('m1');
+    const r = await p.parseIncremental(file, 0);
+    const asst = r.messages[1];
+    const edits = asst.contentBlocks.filter((b) => b.blockType === 'FileEdit');
+    expect(edits).toHaveLength(2);
+    const paths = edits.map((b) => b.filePath).sort();
+    expect(paths).toEqual(['/repo/x.ts', '/repo/y.ts']);
+    const xBlock = edits.find((b) => b.filePath === '/repo/x.ts')!;
+    expect(xBlock.diff).toContain('-x');
+    expect(xBlock.diff).toContain('+X');
+    expect(xBlock.diff).toContain('-x2');
+    expect(xBlock.diff).toContain('+X2');
+  });
+});
