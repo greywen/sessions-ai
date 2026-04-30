@@ -9,6 +9,10 @@
 
 [English](./README.md) | 中文
 
+[![npm](https://img.shields.io/npm/v/sessions-ai.svg)](https://www.npmjs.com/package/sessions-ai)
+[![Docker Hub](https://img.shields.io/docker/v/graywen/sessions-ai-web?label=docker&sort=semver)](https://hub.docker.com/r/graywen/sessions-ai-web)
+[![Release](https://github.com/greywen/sessions-ai/actions/workflows/release.yml/badge.svg)](https://github.com/greywen/sessions-ai/actions/workflows/release.yml)
+
 ## 目录结构
 
 - `apps/web/` — Next.js 管理后台 + 上报 API

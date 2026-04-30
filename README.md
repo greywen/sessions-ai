@@ -8,6 +8,10 @@
 
 English | [中文](./README.zh-CN.md)
 
+[![npm](https://img.shields.io/npm/v/sessions-ai.svg)](https://www.npmjs.com/package/sessions-ai)
+[![Docker Hub](https://img.shields.io/docker/v/graywen/sessions-ai-web?label=docker&sort=semver)](https://hub.docker.com/r/graywen/sessions-ai-web)
+[![Release](https://github.com/greywen/sessions-ai/actions/workflows/release.yml/badge.svg)](https://github.com/greywen/sessions-ai/actions/workflows/release.yml)
+
 ## Project structure
 
 - `apps/web/` — Next.js admin web app + ingest API
