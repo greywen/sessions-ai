@@ -58,3 +58,4 @@ yarn-error.log*
 .github/copilot-instructions.md
 .playwright-mcp
 docs
+logo

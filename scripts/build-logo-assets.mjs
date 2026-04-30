@@ -8,9 +8,9 @@ import { spawnSync } from 'node:child_process';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, '..');
 
-const DEFAULT_SOURCE = path.join(repoRoot, 'logo', 'sessions-ai logo.png');
-const DEFAULT_CROP_TOP = 0;
-const DEFAULT_CROP_BOTTOM = 0;
+const DEFAULT_SOURCE = path.join(repoRoot, 'logo', 'logo.png');
+const DEFAULT_CROP_TOP = 192;
+const DEFAULT_CROP_BOTTOM = 192;
 
 const OUTPUTS = [
   { file: 'apps/web/public/brand/logo.png', size: 512, format: 'png' },
