@@ -43,9 +43,11 @@ function First-Line([string]$text) {
 }
 
 function Get-SessionsCommand {
-  $cmd = Get-Command 'sessions-ai' -ErrorAction SilentlyContinue
+  # Prefer .cmd shim on Windows to avoid accidentally invoking a stray
+  # extensionless file named "sessions-ai" (which triggers an "Open with" popup).
+  $cmd = Get-Command 'sessions-ai.cmd' -ErrorAction SilentlyContinue
   if (-not $cmd) {
-    $cmd = Get-Command 'sessions-ai.cmd' -ErrorAction SilentlyContinue
+    $cmd = Get-Command 'sessions-ai' -ErrorAction SilentlyContinue
   }
   return $cmd
 }
@@ -92,23 +94,33 @@ if (-not (Get-SessionsCommand)) {
   }
 }
 
+$system32Shadow = Join-Path $env:WINDIR 'System32\sessions-ai'
+if (Test-Path $system32Shadow) {
+  Write-Host "[sessions-ai] Warning: found conflicting file $system32Shadow" -ForegroundColor Yellow
+  Write-Host '[sessions-ai] This can trigger an "Open with" popup. Prefer sessions-ai.cmd or remove that file.' -ForegroundColor Yellow
+}
+
+$sessionsCmd = Get-SessionsCommand
+if (-not $sessionsCmd) {
+  throw 'sessions-ai command not found after npm install. Try opening a new terminal and run npm i -g sessions-ai again.'
+}
+
 # 4. Configure server URL
 if ($ServerUrl) {
   Write-Host "[sessions-ai] Setting serverUrl = $ServerUrl" -ForegroundColor Cyan
-  sessions-ai config set serverUrl $ServerUrl
+  & $sessionsCmd.Source config set serverUrl $ServerUrl
 }
 
 # 5. Service
 if (-not $NoService) {
   Write-Host '[sessions-ai] Installing autostart service (Task Scheduler, no console window)...' -ForegroundColor Cyan
-  sessions-ai service install
+  & $sessionsCmd.Source service install
 } else {
   Write-Host '[sessions-ai] -NoService specified, skipping service install.' -ForegroundColor Yellow
 }
 
 Write-Host ''
 
-$sessionsCmd = Get-SessionsCommand
 $cliPath = if ($sessionsCmd) { $sessionsCmd.Source } else { '' }
 
 $npmPrefix = ''
@@ -121,7 +133,7 @@ try {
 $configPath = ''
 if ($sessionsCmd) {
   try {
-    $configPath = First-Line (& sessions-ai config path 2>$null)
+    $configPath = First-Line (& $sessionsCmd.Source config path 2>$null)
   } catch {
     $configPath = ''
   }
