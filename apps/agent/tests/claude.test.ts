@@ -240,3 +240,178 @@ describe('ClaudeCodeParser - parsing messages and usage', () => {
     expect(r3.newOffset).toBe(r2.newOffset);
   });
 });
+
+describe('ClaudeCodeParser - file edit tools', () => {
+  test('Edit tool produces FileEdit block with diff and applied status', async () => {
+    const file = writeClaudeProjectJsonl([
+      {
+        type: 'assistant',
+        uuid: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+        parentUuid: null,
+        timestamp: '2026-04-28T08:00:00.000Z',
+        sessionId: '11111111-2222-4333-8444-555555555555',
+        cwd: '/work/demo',
+        gitBranch: 'main',
+        message: {
+          id: 'msg_edit',
+          role: 'assistant',
+          model: 'anthropic/claude-opus-4.6',
+          content: [
+            {
+              type: 'tool_use',
+              id: 'toolu_edit_1',
+              name: 'Edit',
+              input: { file_path: 'src/x.ts', old_string: 'foo', new_string: 'bar' },
+            },
+          ],
+        },
+      },
+      {
+        type: 'user',
+        uuid: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+        parentUuid: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+        timestamp: '2026-04-28T08:00:01.000Z',
+        sessionId: '11111111-2222-4333-8444-555555555555',
+        message: {
+          role: 'user',
+          content: [
+            { type: 'tool_result', tool_use_id: 'toolu_edit_1', content: 'ok' },
+          ],
+        },
+      },
+    ]);
+
+    const p = new ClaudeCodeParser('m1');
+    const r = await p.parseIncremental(file, 0);
+    // The successful tool_result is folded into the FileEdit block's status,
+    // so the trailing user message has no visible blocks and is skipped.
+    expect(r.messages.length).toBe(1);
+    const editBlock = r.messages[0].contentBlocks.find((b) => b.blockType === 'FileEdit');
+    expect(editBlock).toBeDefined();
+    expect(editBlock!.filePath).toBe('src/x.ts');
+    expect(editBlock!.diff).toContain('-foo');
+    expect(editBlock!.diff).toContain('+bar');
+    expect(editBlock!.toolName).toBe('Edit');
+    const meta = (editBlock!.toolInput as Record<string, unknown>).editMeta as Record<string, unknown>;
+    expect(meta.operation).toBe('update');
+    expect(meta.status).toBe('applied');
+    expect(meta.cwd).toBe('/work/demo');
+    expect(meta.gitBranch).toBe('main');
+  });
+
+  test('Failed Edit tool_result flips status to failed and emits Error block', async () => {
+    const file = writeClaudeProjectJsonl([
+      {
+        type: 'assistant',
+        uuid: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+        parentUuid: null,
+        timestamp: '2026-04-28T08:00:00.000Z',
+        sessionId: '11111111-2222-4333-8444-555555555555',
+        message: {
+          role: 'assistant',
+          model: 'anthropic/claude-opus-4.6',
+          content: [
+            {
+              type: 'tool_use',
+              id: 'toolu_edit_2',
+              name: 'Edit',
+              input: { file_path: 'a.ts', old_string: 'x', new_string: 'y' },
+            },
+          ],
+        },
+      },
+      {
+        type: 'user',
+        uuid: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+        parentUuid: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+        timestamp: '2026-04-28T08:00:01.000Z',
+        sessionId: '11111111-2222-4333-8444-555555555555',
+        message: {
+          role: 'user',
+          content: [
+            { type: 'tool_result', tool_use_id: 'toolu_edit_2', content: 'string not found', is_error: true },
+          ],
+        },
+      },
+    ]);
+    const p = new ClaudeCodeParser('m1');
+    const r = await p.parseIncremental(file, 0);
+    const editBlock = r.messages[0].contentBlocks.find((b) => b.blockType === 'FileEdit')!;
+    const meta = (editBlock.toolInput as Record<string, unknown>).editMeta as Record<string, unknown>;
+    expect(meta.status).toBe('failed');
+    const errorBlock = r.messages[1].contentBlocks.find((b) => b.blockType === 'Error');
+    expect(errorBlock).toBeDefined();
+    expect(errorBlock!.content).toContain('string not found');
+  });
+
+  test('MultiEdit produces a single FileEdit with combined hunks', async () => {
+    const file = writeClaudeProjectJsonl([
+      {
+        type: 'assistant',
+        uuid: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
+        parentUuid: null,
+        timestamp: '2026-04-28T08:00:00.000Z',
+        sessionId: '11111111-2222-4333-8444-555555555555',
+        message: {
+          role: 'assistant',
+          model: 'anthropic/claude-opus-4.6',
+          content: [
+            {
+              type: 'tool_use',
+              id: 'toolu_me_1',
+              name: 'MultiEdit',
+              input: {
+                file_path: 'm.ts',
+                edits: [
+                  { old_string: 'a', new_string: 'A' },
+                  { old_string: 'b', new_string: 'B' },
+                ],
+              },
+            },
+          ],
+        },
+      },
+    ]);
+    const p = new ClaudeCodeParser('m1');
+    const r = await p.parseIncremental(file, 0);
+    const editBlocks = r.messages[0].contentBlocks.filter((b) => b.blockType === 'FileEdit');
+    expect(editBlocks).toHaveLength(1);
+    expect(editBlocks[0].diff).toContain('-a');
+    expect(editBlocks[0].diff).toContain('+A');
+    expect(editBlocks[0].diff).toContain('-b');
+    expect(editBlocks[0].diff).toContain('+B');
+    expect(editBlocks[0].content).toContain('2 hunks');
+  });
+
+  test('Write produces FileEdit with operation=create', async () => {
+    const file = writeClaudeProjectJsonl([
+      {
+        type: 'assistant',
+        uuid: 'ffffffff-ffff-4fff-8fff-ffffffffffff',
+        parentUuid: null,
+        timestamp: '2026-04-28T08:00:00.000Z',
+        sessionId: '11111111-2222-4333-8444-555555555555',
+        message: {
+          role: 'assistant',
+          model: 'anthropic/claude-opus-4.6',
+          content: [
+            {
+              type: 'tool_use',
+              id: 'toolu_w_1',
+              name: 'Write',
+              input: { file_path: 'new.txt', content: 'hello\nworld' },
+            },
+          ],
+        },
+      },
+    ]);
+    const p = new ClaudeCodeParser('m1');
+    const r = await p.parseIncremental(file, 0);
+    const editBlock = r.messages[0].contentBlocks.find((b) => b.blockType === 'FileEdit')!;
+    expect(editBlock.filePath).toBe('new.txt');
+    expect(editBlock.diff).toContain('+hello');
+    expect(editBlock.diff).toContain('+world');
+    const meta = (editBlock.toolInput as Record<string, unknown>).editMeta as Record<string, unknown>;
+    expect(meta.operation).toBe('create');
+  });
+});
