@@ -1,5 +1,6 @@
-import { describe, expect, test, beforeEach, afterEach } from 'bun:test';
+import { describe, expect, test, beforeEach, afterEach, spyOn } from 'bun:test';
 import { appendFileSync, mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import * as nodeOs from 'node:os';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -70,14 +71,12 @@ describe('QwenCodeParser - identity and matching', () => {
   });
 
   test('logPaths discovers Qoder projects + logs in platform-specific location', () => {
+    const homeSpy = spyOn(nodeOs, 'homedir').mockReturnValue(tempDir);
     const oldAppData = process.env.APPDATA;
-    const oldHome = process.env.HOME;
-    const oldUserProfile = process.env.USERPROFILE;
     const oldXdg = process.env.XDG_CONFIG_HOME;
     try {
+      // Force POSIX branches to also resolve under tempDir
       process.env.APPDATA = tempDir;
-      process.env.HOME = tempDir;
-      process.env.USERPROFILE = tempDir;
       process.env.XDG_CONFIG_HOME = tempDir;
 
       let projectsBase: string;
@@ -98,12 +97,9 @@ describe('QwenCodeParser - identity and matching', () => {
       expect(p.logPaths()).toContain(projectsBase);
       expect(p.logPaths()).toContain(logsBase);
     } finally {
+      homeSpy.mockRestore();
       if (oldAppData === undefined) delete process.env.APPDATA;
       else process.env.APPDATA = oldAppData;
-      if (oldHome === undefined) delete process.env.HOME;
-      else process.env.HOME = oldHome;
-      if (oldUserProfile === undefined) delete process.env.USERPROFILE;
-      else process.env.USERPROFILE = oldUserProfile;
       if (oldXdg === undefined) delete process.env.XDG_CONFIG_HOME;
       else process.env.XDG_CONFIG_HOME = oldXdg;
     }

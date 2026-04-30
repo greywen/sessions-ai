@@ -1,5 +1,6 @@
-import { describe, expect, test, beforeEach, afterEach } from 'bun:test';
+import { describe, expect, test, beforeEach, afterEach, spyOn } from 'bun:test';
 import { appendFileSync, mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import * as nodeOs from 'node:os';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -43,20 +44,14 @@ describe('ClaudeCodeParser - basic identity', () => {
   });
 
   test('logPaths discovers ~/.claude/projects', () => {
-    const oldUserProfile = process.env.USERPROFILE;
-    const oldHome = process.env.HOME;
+    const spy = spyOn(nodeOs, 'homedir').mockReturnValue(tempDir);
     try {
-      process.env.USERPROFILE = tempDir;
-      process.env.HOME = tempDir;
       const p = new ClaudeCodeParser('m1');
       const projectsDir = join(tempDir, '.claude', 'projects');
       mkdirSync(projectsDir, { recursive: true });
       expect(p.logPaths()).toContain(projectsDir);
     } finally {
-      if (oldUserProfile === undefined) delete process.env.USERPROFILE;
-      else process.env.USERPROFILE = oldUserProfile;
-      if (oldHome === undefined) delete process.env.HOME;
-      else process.env.HOME = oldHome;
+      spy.mockRestore();
     }
   });
 });
