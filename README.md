@@ -53,8 +53,7 @@ Two paths, designed to coexist:
 
 **Windows** (PowerShell, will self-elevate to Administrator):
 ```powershell
-iwr -useb https://raw.githubusercontent.com/greywen/sessions-ai/main/scripts/install-agent.ps1 -OutFile $env:TEMP\sa.ps1
-powershell -ExecutionPolicy Bypass -File $env:TEMP\sa.ps1 -ServerUrl http://localhost:23712
+iwr -useb https://raw.githubusercontent.com/greywen/sessions-ai/main/scripts/install-agent.ps1 -OutFile $env:TEMP\sa.ps1; powershell -ExecutionPolicy Bypass -File $env:TEMP\sa.ps1 -ServerUrl http://localhost:23712
 ```
 
 **macOS / Linux**:
