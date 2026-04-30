@@ -1,10 +1,14 @@
 name: Release
 
-# Trigger by pushing a semver tag. Recommended flow:
-#   git switch -c release/v0.1.0
-#   git push -u origin release/v0.1.0
-#   git tag v0.1.0
-#   git push origin v0.1.0
+# Trigger by pushing a semver tag, e.g.:
+#   git switch -c release/v0.1.1
+#   git push -u origin release/v0.1.1
+#   git tag v0.1.1 && git push origin v0.1.1
+#
+# Required repository secrets:
+#   NPM_TOKEN            npm Automation token (Publish access to `sessions-ai`)
+#   DOCKERHUB_USERNAME   Docker Hub user (e.g. graywen)
+#   DOCKERHUB_TOKEN      Docker Hub PAT (Read & Write)
 
 on:
   push:
@@ -15,11 +19,11 @@ on:
 permissions:
   contents: write
   packages: write
-  id-token: write   # for npm provenance
+  id-token: write
 
 jobs:
   # ------------------------------------------------------------------
-  # 1. Cross-platform tests must pass before anything is published
+  # 1. Cross-platform unit tests + publish-pkg smoke
   # ------------------------------------------------------------------
   test:
     name: Test (${{ matrix.os }})
@@ -53,9 +57,6 @@ jobs:
       - name: Agent unit tests
         run: pnpm test:agent
 
-      # Build the publishable npm bundle and exercise the CLI to confirm
-      # `sessions-ai` works on this OS without actually installing a
-      # system service (use `service print` for a dry-run preview).
       - name: Build publish-pkg
         run: pnpm --filter agent publish:prepare
 
@@ -63,21 +64,19 @@ jobs:
         working-directory: apps/agent/publish-pkg
         run: bun bin/sessions-ai.js --version
 
-      - name: Smoke - sessions-ai service print (install dry-run)
+      - name: Smoke - sessions-ai service print
         working-directory: apps/agent/publish-pkg
         run: bun bin/sessions-ai.js service print
 
-      - name: Smoke - sessions-ai config path
-        working-directory: apps/agent/publish-pkg
-        run: bun bin/sessions-ai.js config path
-
   # ------------------------------------------------------------------
-  # 2. Publish npm package `sessions-ai`
+  # 2. Publish npm package
   # ------------------------------------------------------------------
   publish-npm:
     name: Publish npm
     needs: test
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.ver.outputs.version }}
     steps:
       - uses: actions/checkout@v4
 
@@ -116,12 +115,14 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
   # ------------------------------------------------------------------
-  # 3. Publish multi-arch Docker image to Docker Hub + GHCR
+  # 3. Publish multi-arch Docker image (Docker Hub + GHCR)
   # ------------------------------------------------------------------
   publish-docker:
     name: Publish Docker image
     needs: test
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.ver.outputs.version }}
     steps:
       - uses: actions/checkout@v4
 
@@ -129,11 +130,8 @@ jobs:
         id: ver
         run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
 
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
 
       - name: Login to Docker Hub
         uses: docker/login-action@v3
@@ -174,11 +172,126 @@ jobs:
           provenance: false
 
   # ------------------------------------------------------------------
-  # 4. Create a GitHub Release once npm + Docker are published
+  # 4. Real install / uninstall validation on three OSes
+  # ------------------------------------------------------------------
+  verify-npm-install:
+    name: Verify npm install (${{ matrix.os }})
+    needs: publish-npm
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      # Bun is required at runtime: published bin uses `#!/usr/bin/env bun`
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.3.10'
+
+      - name: Wait for npm registry to propagate
+        shell: bash
+        run: |
+          set -e
+          VERSION="${{ needs.publish-npm.outputs.version }}"
+          for i in 1 2 3 4 5 6 7 8 9 10; do
+            if npm view "sessions-ai@${VERSION}" version >/dev/null 2>&1; then
+              echo "Found sessions-ai@${VERSION} on npm"
+              exit 0
+            fi
+            echo "Attempt ${i}: not yet visible, sleeping 10s..."
+            sleep 10
+          done
+          echo "Timed out waiting for npm visibility"
+          exit 1
+
+      - name: Install sessions-ai globally
+        shell: bash
+        run: npm install -g "sessions-ai@${{ needs.publish-npm.outputs.version }}"
+
+      - name: sessions-ai --version
+        shell: bash
+        run: sessions-ai --version
+
+      - name: sessions-ai config path
+        shell: bash
+        run: sessions-ai config path
+
+      # Real service install/uninstall — uses systemd-user / launchd / Task Scheduler
+      - name: sessions-ai service install
+        shell: bash
+        run: sessions-ai service install --no-start
+
+      - name: sessions-ai service uninstall
+        shell: bash
+        run: sessions-ai service uninstall
+
+  # ------------------------------------------------------------------
+  # 5. Real Docker run validation
+  # ------------------------------------------------------------------
+  verify-docker:
+    name: Verify Docker image
+    needs: publish-docker
+    runs-on: ubuntu-latest
+    steps:
+      - name: Pull and inspect
+        run: |
+          set -e
+          IMAGE="${{ secrets.DOCKERHUB_USERNAME }}/sessions-ai-web:${{ needs.publish-docker.outputs.version }}"
+          echo "Pulling $IMAGE"
+          docker pull "$IMAGE"
+          docker image inspect "$IMAGE" --format '{{.Architecture}}/{{.Os}}'
+
+      - name: Start container with throwaway Postgres
+        run: |
+          set -e
+          IMAGE="${{ secrets.DOCKERHUB_USERNAME }}/sessions-ai-web:${{ needs.publish-docker.outputs.version }}"
+          docker network create sessions-net
+          docker run -d --name pg --network sessions-net \
+            -e POSTGRES_USER=u -e POSTGRES_PASSWORD=p -e POSTGRES_DB=d \
+            postgres:17-alpine
+          for i in 1 2 3 4 5 6 7 8 9 10; do
+            if docker exec pg pg_isready -U u -d d >/dev/null 2>&1; then break; fi
+            sleep 2
+          done
+          docker run -d --name web --network sessions-net \
+            -e DATABASE_URL=postgresql://u:p@pg:5432/d \
+            -e JWT_SECRET=ci-secret-not-for-prod \
+            -e ADMIN_EMAIL=admin -e ADMIN_PASSWORD=admin \
+            -p 23712:23712 \
+            "$IMAGE"
+
+      - name: Probe HTTP endpoint
+        run: |
+          set -e
+          for i in $(seq 1 30); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:23712/login || echo "000")
+            echo "attempt $i -> $code"
+            if [ "$code" = "200" ] || [ "$code" = "302" ] || [ "$code" = "307" ]; then
+              echo "web is up"
+              exit 0
+            fi
+            sleep 3
+          done
+          echo "::error::web container did not respond on /login"
+          docker logs web || true
+          exit 1
+
+      - name: Cleanup
+        if: always()
+        run: |
+          docker rm -f web pg 2>/dev/null || true
+          docker network rm sessions-net 2>/dev/null || true
+
+  # ------------------------------------------------------------------
+  # 6. Create GitHub Release once npm + docker have been verified
   # ------------------------------------------------------------------
   github-release:
     name: GitHub Release
-    needs: [publish-npm, publish-docker]
+    needs: [verify-npm-install, verify-docker]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -191,12 +304,15 @@ jobs:
         run: |
           set -e
           VERSION="${GITHUB_REF_NAME#v}"
+          OWNER_LC=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
           NOTES="### Artifacts
 
-          - npm: \`npm i -g sessions-ai@${VERSION}\`
-          - Docker Hub: \`docker pull ${{ secrets.DOCKERHUB_USERNAME }}/sessions-ai-web:${VERSION}\`
-          - GHCR: \`docker pull ghcr.io/$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')/sessions-ai-web:${VERSION}\`
-          "
+          - **npm**: \`npm i -g sessions-ai@${VERSION}\`
+          - **Docker Hub**: \`docker pull ${{ secrets.DOCKERHUB_USERNAME }}/sessions-ai-web:${VERSION}\`
+          - **GHCR**: \`docker pull ghcr.io/${OWNER_LC}/sessions-ai-web:${VERSION}\`
+
+          All three platforms (Linux / macOS / Windows) passed real install + uninstall validation.
+          Docker image was started against a throwaway Postgres and answered HTTP on /login."
           gh release create "${GITHUB_REF_NAME}" \
             --title "${GITHUB_REF_NAME}" \
             --notes "${NOTES}" \

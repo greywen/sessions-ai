@@ -179,6 +179,14 @@ async function installMac(ctx: ServiceContext, opts: InstallOptions): Promise<vo
     return;
   }
 
+  if (opts.noStart) {
+    logStep(
+      'macOS LaunchAgent plist written but not loaded (--no-start).',
+      `plist: ${plistPath}\nTo activate later: launchctl load -w ${plistPath}`,
+    );
+    return;
+  }
+
   await runCommand(['launchctl', 'unload', plistPath], ctx.launch.cwd).catch(() => undefined);
   await runCommand(['launchctl', 'load', '-w', plistPath], ctx.launch.cwd);
 
@@ -230,6 +238,14 @@ async function installLinux(ctx: ServiceContext, opts: InstallOptions): Promise<
   if (opts.printOnly) {
     logStep('Linux systemd user service preview:', unitPath);
     logStep(unitContent);
+    return;
+  }
+
+  if (opts.noStart) {
+    logStep(
+      'Linux systemd user unit written but not started (--no-start).',
+      `unit: ${unitPath}\nrunner: ${runnerPath}\nTo activate later: systemctl --user daemon-reload && systemctl --user enable --now ${SERVICE_NAME}.service`,
+    );
     return;
   }
 
