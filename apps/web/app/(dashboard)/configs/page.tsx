@@ -205,14 +205,7 @@ export default function ConfigsPage() {
 
   return (
     <div className="space-y-4">
-      {/* Page Head */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold">{t('configs.title')}</h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            {t('configs.subtitleShort')}
-          </p>
-        </div>
+      <div className="flex justify-end">
         <Button onClick={openCreate}>
           <Plus className="mr-2 h-4 w-4" />
           {t('configs.create')}

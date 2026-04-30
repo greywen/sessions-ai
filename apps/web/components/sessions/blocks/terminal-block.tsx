@@ -22,12 +22,12 @@ export function TerminalBlock({ command, output, exitCode }: TerminalBlockProps)
     <div className="my-1 overflow-hidden rounded-md border border-border/70 bg-card">
       {/* CLI */}
       {command && (
-        <div className="flex items-center gap-2 px-3 py-2 font-mono text-sm">
-          <Terminal className="h-3.5 w-3.5 shrink-0 text-emerald-600" />
-          <span className="text-emerald-700">$</span>
-          <span className="text-foreground">{command}</span>
+        <div className="flex items-start gap-2 px-3 py-2 font-mono text-sm">
+          <Terminal className="h-3.5 w-3.5 shrink-0 text-emerald-600 mt-0.5" />
+          <span className="text-emerald-700 mt-0.5">$</span>
+          <span className="text-foreground break-all">{command}</span>
           {exitCode != null && exitCode !== 0 && (
-            <span className="ml-auto text-xs text-red-600">[exit {exitCode}]</span>
+            <span className="ml-auto shrink-0 text-xs text-red-600 mt-0.5">[exit {exitCode}]</span>
           )}
         </div>
       )}

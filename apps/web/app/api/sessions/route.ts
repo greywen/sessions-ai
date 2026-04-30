@@ -19,6 +19,34 @@ const querySchema = z.object({
   favorite: z.enum(['true', 'false']).optional(),
 });
 
+function extractTextFromUnknown(value: unknown): string {
+  if (value == null) return '';
+  if (typeof value === 'string') return value;
+  if (Array.isArray(value)) {
+    return value.map((item) => extractTextFromUnknown(item)).filter(Boolean).join(' ').trim();
+  }
+  if (typeof value === 'object') {
+    const obj = value as Record<string, unknown>;
+    const candidates = [obj.content, obj.text, obj.value, obj.message];
+    for (const candidate of candidates) {
+      const text = extractTextFromUnknown(candidate);
+      if (text) return text;
+    }
+  }
+  return '';
+}
+
+function extractFirstMessagePreview(contentBlocks: unknown): string {
+  if (!Array.isArray(contentBlocks) || contentBlocks.length === 0) return '';
+  const text = contentBlocks
+    .map((block) => extractTextFromUnknown(block))
+    .filter(Boolean)
+    .join('\n')
+    .trim();
+  if (!text) return '';
+  return text.length > 200 ? `${text.slice(0, 200)}...` : text;
+}
+
 // GET /api/sessions — Sessions list(Preview with user info and first message)
 export async function GET(request: Request) {
   try {
@@ -113,6 +141,7 @@ export async function GET(request: Request) {
         sourceTool: normalizedMessages.sourceTool,
         machineId: normalizedMessages.machineId,
         messageCount: count(normalizedMessages.id).as('message_count'),
+        sessionTitle: sql<string | null>`MAX(NULLIF(${normalizedMessages.metadata}->>'sessionTitle', ''))`.as('session_title'),
         firstMessageAt: min(normalizedMessages.rawTimestamp).as('first_message_at'),
         lastMessageAt: max(normalizedMessages.rawTimestamp).as('last_message_at'),
         isFavorite: sql<boolean>`MAX(CASE WHEN ${sessionFavorites.id} IS NOT NULL THEN 1 ELSE 0 END) = 1`.as('is_favorite'),
@@ -135,48 +164,42 @@ export async function GET(request: Request) {
       .limit(params.limit)
       .offset(offset);
 
-    // Parallel execution of session list and total queries
-    const [sessions, [{ total }]] = await Promise.all([
-      sessionsQuery,
-      db.select({
-        total: countDistinct(normalizedMessages.sessionId).as('total'),
-      })
-        .from(normalizedMessages)
-        .where(whereClause),
-    ]);
+    const sessions = await sessionsQuery;
+    const [{ total }] = await db.select({
+      total: countDistinct(normalizedMessages.sessionId).as('total'),
+    })
+      .from(normalizedMessages)
+      .where(whereClause);
 
     // Get associated devices in parallel/User information + First message preview
     const machineIds = [...new Set(sessions.map((s) => s.machineId))];
     const sessionIds = sessions.map((s) => s.sessionId);
 
-    const [machineRows, firstMessages] = await Promise.all([
-      // 6. Get connected device and user information
-      machineIds.length > 0
-        ? db.select({
-            id: machines.id,
-            displayName: machines.displayName,
-            ownerName: users.name,
-            ownerEmail: users.email,
-          })
-            .from(machines)
-            .leftJoin(users, eq(machines.ownerId, users.id))
-            .where(inArray(machines.id, machineIds))
-        : Promise.resolve([]),
+    // 6. Get connected device and user information
+    const machineRows = machineIds.length > 0
+      ? await db.select({
+          id: machines.id,
+          displayName: machines.displayName,
+          ownerName: users.name,
+          ownerEmail: users.email,
+        })
+          .from(machines)
+          .leftJoin(users, eq(machines.ownerId, users.id))
+          .where(inArray(machines.id, machineIds))
+      : [];
 
-      // 7. Get the first user message for each session(Prev)
-      sessionIds.length > 0
-        ? db.execute(sql`
-            SELECT DISTINCT ON (session_id)
-              session_id,
-              content_blocks,
-              metadata
-            FROM normalized_messages
-            WHERE session_id IN (${sql.join(sessionIds.map(id => sql`${id}`), sql`, `)})
-              AND role = 'User'
-            ORDER BY session_id, raw_timestamp ASC
-          `)
-        : Promise.resolve([]),
-    ]);
+    // 7. Get the first user message for each session(Prev)
+    const firstMessages = sessionIds.length > 0
+      ? await db.execute(sql`
+          SELECT DISTINCT ON (session_id)
+            session_id,
+            content_blocks
+          FROM normalized_messages
+          WHERE session_id IN (${sql.join(sessionIds.map(id => sql`${id}`), sql`, `)})
+            AND role = 'User'
+          ORDER BY session_id, raw_timestamp ASC
+        `)
+      : [];
 
     let machineMap: Record<string, { displayName: string | null; ownerName: string | null; ownerEmail: string | null }> = {};
     for (const row of machineRows) {
@@ -188,17 +211,10 @@ export async function GET(request: Request) {
     }
 
     let firstMessageMap: Record<string, string> = {};
-    let sessionTitleMap: Record<string, string> = {};
     for (const row of firstMessages) {
       const sid = row.session_id as string;
-      const blocks = row.content_blocks as Array<{ blockType: string; content: string }> | null;
-      if (blocks && blocks.length > 0) {
-        const textBlock = blocks.find((b) => b.blockType === 'Text');
-        firstMessageMap[sid] = (textBlock?.content ?? blocks[0]?.content ?? '').slice(0, 200);
-      }
-      const meta = row.metadata as Record<string, unknown> | null;
-      const title = meta && typeof meta.sessionTitle === 'string' ? meta.sessionTitle : null;
-      if (title && title.length > 0) sessionTitleMap[sid] = title;
+      const preview = extractFirstMessagePreview(row.content_blocks);
+      if (preview) firstMessageMap[sid] = preview;
     }
 
     // 8. Assembly response
@@ -208,7 +224,7 @@ export async function GET(request: Request) {
       ownerName: machineMap[s.machineId]?.ownerName ?? null,
       ownerEmail: machineMap[s.machineId]?.ownerEmail ?? null,
       firstUserMessage: firstMessageMap[s.sessionId] ?? null,
-      sessionTitle: sessionTitleMap[s.sessionId] ?? null,
+      sessionTitle: typeof s.sessionTitle === 'string' ? s.sessionTitle : null,
       isFavorite: s.isFavorite,
     }));
 

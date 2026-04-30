@@ -126,7 +126,6 @@ export default function CostsPage() {
   if (loading) {
     return (
       <div className="space-y-4">
-        <h1 className="text-2xl font-bold">{t('costs.title')}</h1>
         <div className="grid grid-cols-3 gap-4">
           {[1, 2, 3].map((i) => <Skeleton key={i} className="h-28" />)}
         </div>
@@ -137,8 +136,7 @@ export default function CostsPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">{t('costs.title')}</h1>
+      <div className="flex justify-end">
         <TimeRangeSelector value={range} onChange={setRange} />
       </div>
 

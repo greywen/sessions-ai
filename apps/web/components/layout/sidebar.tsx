@@ -4,41 +4,14 @@ import React from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { usePathname } from 'next/navigation';
-import {
-  LayoutDashboard,
-  Monitor,
-  MessageSquare,
-  DollarSign,
-  Settings2,
-  Users,
-  CreditCard,
-  ChevronLeft,
-  ChevronRight,
-} from 'lucide-react';
+import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from '@/components/ui/tooltip';
-import { Separator } from '@/components/ui/separator';
 import { useI18n } from '@/lib/i18n/provider';
+import { APP_NAV_ITEMS, type NavDef } from './nav-items';
 
-interface NavDef {
-  key: string;
-  href: string;
-  icon: React.ComponentType<{ className?: string }>;
-}
-
-const mainNavItems: NavDef[] = [
-  { key: 'nav.dashboard', href: '/', icon: LayoutDashboard },
-  { key: 'nav.devices', href: '/devices', icon: Monitor },
-  { key: 'nav.sessions', href: '/sessions', icon: MessageSquare },
-  { key: 'nav.costs', href: '/costs', icon: DollarSign },
-  { key: 'nav.configs', href: '/configs', icon: Settings2 },
-  { key: 'nav.users', href: '/users', icon: Users },
-];
-
-const settingsNavItems: NavDef[] = [
-  { key: 'nav.pricing', href: '/settings/pricing', icon: CreditCard },
-];
+const navItems: NavDef[] = APP_NAV_ITEMS;
 
 interface SidebarProps {
   collapsed: boolean;
@@ -109,13 +82,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
         </div>
 
         <nav className="flex-1 space-y-1 px-2 py-4">
-          {mainNavItems.map((item) => (
-            <NavItem key={item.href} item={item} />
-          ))}
-
-          <Separator className="my-4" />
-
-          {settingsNavItems.map((item) => (
+          {navItems.map((item) => (
             <NavItem key={item.href} item={item} />
           ))}
         </nav>

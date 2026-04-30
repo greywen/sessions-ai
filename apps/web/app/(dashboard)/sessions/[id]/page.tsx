@@ -32,6 +32,7 @@ interface SessionMeta {
   totalInputTokens: number;
   totalOutputTokens: number;
   totalCacheTokens: number;
+  totalCost: number;
 }
 
 interface MessageItem {
@@ -278,11 +279,11 @@ export default function SessionDetailPage({ params }: { params: Promise<{ id: st
     <div className="flex flex-col h-[calc(100vh-theme(spacing.14)-theme(spacing.12))]">
       {/* Top:Session Meta Info */}
       <div className="flex-shrink-0 space-y-3 pb-4 border-b">
-        <div className="flex items-center gap-3">
-          <Button variant="ghost" size="icon" onClick={() => router.push('/sessions')}>
+        <div className="flex items-center gap-2 sm:gap-3">
+          <Button variant="ghost" size="icon" onClick={() => router.push('/sessions')} className="shrink-0">
             <ArrowLeft className="h-4 w-4" />
           </Button>
-          <h1 className="text-lg font-semibold truncate max-w-[60vw]" title={meta?.sessionTitle ?? meta?.sessionId ?? ''}>
+          <h1 className="text-base sm:text-lg font-semibold truncate max-w-[50vw] sm:max-w-[60vw]" title={meta?.sessionTitle ?? meta?.sessionId ?? ''}>
             {meta?.sessionTitle
               ? meta.sessionTitle
               : meta?.sessionId
@@ -314,7 +315,7 @@ export default function SessionDetailPage({ params }: { params: Promise<{ id: st
         </div>
 
         {meta && (
-          <div className="flex flex-wrap items-center gap-4 text-sm text-muted-foreground ml-10">
+          <div className="flex flex-wrap items-center gap-2 sm:gap-4 text-xs sm:text-sm text-muted-foreground ml-0 sm:ml-12 mt-2 sm:mt-0">
             {meta.ownerName && <span>@{meta.ownerName}</span>}
             {meta.deviceName && <span>{meta.deviceName}</span>}
             <span className="flex items-center gap-1">
@@ -322,7 +323,7 @@ export default function SessionDetailPage({ params }: { params: Promise<{ id: st
               {t('sessions.messageCount', { count: meta.messageCount })}
             </span>
             <span className="font-mono text-xs">
-              {t('session.detail.input')}: {formatTokens(meta.totalInputTokens)} · {t('session.detail.output')}: {formatTokens(meta.totalOutputTokens)}
+              {t('session.detail.input')}: {formatTokens(meta.totalInputTokens)} · {t('session.detail.output')}: {formatTokens(meta.totalOutputTokens)} · {meta.totalCost > 0 ? `$${meta.totalCost.toFixed(4)}` : '$0.000'}
             </span>
           </div>
         )}

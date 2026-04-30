@@ -10,6 +10,19 @@ const patchSchema = z.object({
   favorite: z.boolean(),
 });
 
+const TOKEN_NUMERIC_REGEX = '^[0-9]+([.][0-9]+)?$';
+
+function usageTokenAsNumeric(field: 'inputTokens' | 'outputTokens' | 'cacheReadInputTokens') {
+  const usageValue = sql.raw(`usage->>'${field}'`);
+  return sql`
+    CASE
+      WHEN COALESCE(${usageValue}, '') ~ ${TOKEN_NUMERIC_REGEX}
+      THEN (${usageValue})::numeric
+      ELSE 0
+    END
+  `;
+}
+
 // GET /api/sessions/[id] — Session Details Metadata(Contains device and user information,Token Statistics)
 export async function GET(
   request: Request,
@@ -56,15 +69,18 @@ export async function GET(
       .leftJoin(users, eq(machines.ownerId, users.id))
       .where(eq(machines.id, metadata.machineId));
 
-    // Dapatkan Token Use Aggregation
+    const inputTokensExpr = usageTokenAsNumeric('inputTokens');
+    const outputTokensExpr = usageTokenAsNumeric('outputTokens');
+    const cacheTokensExpr = usageTokenAsNumeric('cacheReadInputTokens');
+
     const [tokenStats] = await db.execute(sql`
       SELECT
-        COALESCE(SUM((usage->>'inputTokens')::bigint), 0) as total_input_tokens,
-        COALESCE(SUM((usage->>'outputTokens')::bigint), 0) as total_output_tokens,
-        COALESCE(SUM((usage->>'cacheReadInputTokens')::bigint), 0) as total_cache_tokens
+        COALESCE(SUM(${inputTokensExpr}), 0)::text as total_input_tokens,
+        COALESCE(SUM(${outputTokensExpr}), 0)::text as total_output_tokens,
+        COALESCE(SUM(${cacheTokensExpr}), 0)::text as total_cache_tokens,
+        COALESCE(SUM(cost_usd), 0)::text as total_cost
       FROM normalized_messages
       WHERE session_id = ${sessionId}
-        AND usage IS NOT NULL
     `);
     const [favoriteRow] = await db
       .select({ id: sessionFavorites.id })
@@ -107,6 +123,7 @@ export async function GET(
         totalInputTokens: Number(tokenStats?.total_input_tokens ?? 0),
         totalOutputTokens: Number(tokenStats?.total_output_tokens ?? 0),
         totalCacheTokens: Number(tokenStats?.total_cache_tokens ?? 0),
+        totalCost: Number(tokenStats?.total_cost ?? 0),
       },
     });
   } catch (error) {
