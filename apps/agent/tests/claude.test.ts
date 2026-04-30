@@ -44,14 +44,19 @@ describe('ClaudeCodeParser - basic identity', () => {
 
   test('logPaths discovers ~/.claude/projects', () => {
     const oldUserProfile = process.env.USERPROFILE;
+    const oldHome = process.env.HOME;
     try {
       process.env.USERPROFILE = tempDir;
+      process.env.HOME = tempDir;
       const p = new ClaudeCodeParser('m1');
       const projectsDir = join(tempDir, '.claude', 'projects');
       mkdirSync(projectsDir, { recursive: true });
       expect(p.logPaths()).toContain(projectsDir);
     } finally {
-      process.env.USERPROFILE = oldUserProfile;
+      if (oldUserProfile === undefined) delete process.env.USERPROFILE;
+      else process.env.USERPROFILE = oldUserProfile;
+      if (oldHome === undefined) delete process.env.HOME;
+      else process.env.HOME = oldHome;
     }
   });
 });

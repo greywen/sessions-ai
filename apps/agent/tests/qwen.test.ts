@@ -69,19 +69,43 @@ describe('QwenCodeParser - identity and matching', () => {
     ).toBe(false);
   });
 
-  test('logPaths discovers Qoder projects + logs via APPDATA', () => {
+  test('logPaths discovers Qoder projects + logs in platform-specific location', () => {
     const oldAppData = process.env.APPDATA;
+    const oldHome = process.env.HOME;
+    const oldUserProfile = process.env.USERPROFILE;
+    const oldXdg = process.env.XDG_CONFIG_HOME;
     try {
       process.env.APPDATA = tempDir;
-      const qoderProjects = join(tempDir, 'Qoder', 'SharedClientCache', 'cli', 'projects');
-      const qoderLogs = join(tempDir, 'Qoder', 'SharedClientCache', 'cli', 'logs');
-      mkdirSync(qoderProjects, { recursive: true });
-      mkdirSync(qoderLogs, { recursive: true });
+      process.env.HOME = tempDir;
+      process.env.USERPROFILE = tempDir;
+      process.env.XDG_CONFIG_HOME = tempDir;
+
+      let projectsBase: string;
+      let logsBase: string;
+      if (process.platform === 'win32') {
+        projectsBase = join(tempDir, 'Qoder', 'SharedClientCache', 'cli', 'projects');
+        logsBase = join(tempDir, 'Qoder', 'SharedClientCache', 'cli', 'logs');
+      } else if (process.platform === 'darwin') {
+        projectsBase = join(tempDir, 'Library', 'Application Support', 'Qoder', 'SharedClientCache', 'cli', 'projects');
+        logsBase = join(tempDir, 'Library', 'Application Support', 'Qoder', 'SharedClientCache', 'cli', 'logs');
+      } else {
+        projectsBase = join(tempDir, 'Qoder', 'SharedClientCache', 'cli', 'projects');
+        logsBase = join(tempDir, 'Qoder', 'SharedClientCache', 'cli', 'logs');
+      }
+      mkdirSync(projectsBase, { recursive: true });
+      mkdirSync(logsBase, { recursive: true });
       const p = new QwenCodeParser('m1');
-      expect(p.logPaths()).toContain(qoderProjects);
-      expect(p.logPaths()).toContain(qoderLogs);
+      expect(p.logPaths()).toContain(projectsBase);
+      expect(p.logPaths()).toContain(logsBase);
     } finally {
-      process.env.APPDATA = oldAppData;
+      if (oldAppData === undefined) delete process.env.APPDATA;
+      else process.env.APPDATA = oldAppData;
+      if (oldHome === undefined) delete process.env.HOME;
+      else process.env.HOME = oldHome;
+      if (oldUserProfile === undefined) delete process.env.USERPROFILE;
+      else process.env.USERPROFILE = oldUserProfile;
+      if (oldXdg === undefined) delete process.env.XDG_CONFIG_HOME;
+      else process.env.XDG_CONFIG_HOME = oldXdg;
     }
   });
 });
