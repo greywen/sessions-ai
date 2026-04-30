@@ -54,19 +54,19 @@ Two paths, designed to coexist:
 **Windows** (PowerShell, will self-elevate to Administrator):
 ```powershell
 iwr -useb https://raw.githubusercontent.com/greywen/sessions-ai/main/scripts/install-agent.ps1 -OutFile $env:TEMP\sa.ps1
-powershell -ExecutionPolicy Bypass -File $env:TEMP\sa.ps1 -ServerUrl http://your-host:23712
+powershell -ExecutionPolicy Bypass -File $env:TEMP\sa.ps1 -ServerUrl http://localhost:23712
 ```
 
 **macOS / Linux**:
 ```bash
 curl -fsSL https://raw.githubusercontent.com/greywen/sessions-ai/main/scripts/install-agent.sh \
-  | bash -s -- --server-url http://your-host:23712
+  | bash -s -- --server-url http://localhost:23712
 ```
 
 ### One-click install (web + db, Docker Compose)
 
 ```bash
-# Default — pulls greywen/sessions-ai-web:latest from Docker Hub
+# Default — pulls graywen/sessions-ai-web:latest from Docker Hub
 curl -fsSL https://raw.githubusercontent.com/greywen/sessions-ai/main/scripts/install-web.sh | bash
 ```
 
@@ -83,7 +83,7 @@ sessions-ai service install [opts]    # Autostart on Win / macOS / Linux
 sessions-ai service uninstall
 sessions-ai service print             # Dry-run, preview generated artifacts
 sessions-ai config show
-sessions-ai config set serverUrl http://your-host:23712
+sessions-ai config set serverUrl http://localhost:23712
 sessions-ai cache clear [--all]
 ```
 

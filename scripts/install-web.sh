@@ -11,7 +11,7 @@
 #   3. docker compose up -d
 #
 # Image sources:
-#   dockerhub  → greywen/sessions-ai-web:latest         (default, requires Docker Hub access)
+#   dockerhub  → graywen/sessions-ai-web:latest         (default, requires Docker Hub access)
 #   local      → builds from local repo checkout (must run inside cloned repo)
 
 set -euo pipefail
@@ -41,7 +41,7 @@ command -v docker >/dev/null 2>&1 || die "Docker not found. Install Docker first
 docker compose version >/dev/null 2>&1 || die "Docker Compose v2 plugin required."
 
 case "$IMAGE_SOURCE" in
-  dockerhub) IMAGE="greywen/sessions-ai-web:latest" ;;
+  dockerhub) IMAGE="graywen/sessions-ai-web:latest" ;;
   local)     IMAGE="" ;;
   *) die "--image-source must be one of: dockerhub, local" ;;
 esac
