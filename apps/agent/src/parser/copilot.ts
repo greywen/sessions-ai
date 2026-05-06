@@ -12,6 +12,11 @@ import type {
 } from './types.ts';
 import type { ParseResult, ToolParser } from './tool-parser.ts';
 import { logger } from '../logger.ts';
+import {
+  buildFileEditBlock,
+  diffFromHunks,
+  type NormalizedFileEdit,
+} from './edit-normalizer.ts';
 
 const COPILOT_NS = 'copilot-ns-v1';
 
@@ -178,6 +183,153 @@ function thinkingValueToString(v: unknown): string {
   return '';
 }
 
+/**
+ * Resolve a file path from a VS Code URI-shaped object. VS Code emits both
+ * `{ path, scheme, fsPath }` and `{ $mid: 1, path, scheme }` variants in
+ * persisted chat sessions; both are accepted here.
+ */
+function pathFromUriLike(v: unknown): string | null {
+  if (!v || typeof v !== 'object') return null;
+  const obj = v as Record<string, unknown>;
+  const fsPath = obj.fsPath;
+  if (typeof fsPath === 'string' && fsPath.length > 0) return fsPath;
+  const path = obj.path;
+  if (typeof path === 'string' && path.length > 0) return path;
+  return null;
+}
+
+type VSCodeRange =
+  | { startLineNumber?: number; endLineNumber?: number; startColumn?: number; endColumn?: number }
+  | { start?: { line?: number; character?: number }; end?: { line?: number; character?: number } };
+
+function formatRange(range: unknown): string {
+  if (!range || typeof range !== 'object') return '';
+  const r = range as VSCodeRange;
+  if ('startLineNumber' in r && typeof r.startLineNumber === 'number') {
+    const sl = r.startLineNumber ?? 0;
+    const el = r.endLineNumber ?? sl;
+    return `L${sl}-L${el}`;
+  }
+  if ('start' in r && r.start && typeof r.start === 'object') {
+    const sl = (r.start.line ?? 0) + 1;
+    const el = ((r.end?.line ?? r.start.line ?? 0) as number) + 1;
+    return `L${sl}-L${el}`;
+  }
+  return '';
+}
+
+interface CopilotTextEdit {
+  newText: string;
+  oldText: string | null;
+  range: unknown;
+}
+
+function collectTextEdits(arr: unknown): CopilotTextEdit[] {
+  const out: CopilotTextEdit[] = [];
+  const visit = (node: unknown) => {
+    if (!node) return;
+    if (Array.isArray(node)) {
+      for (const n of node) visit(n);
+      return;
+    }
+    if (typeof node !== 'object') return;
+    const obj = node as Record<string, unknown>;
+    // Recognise a leaf TextEdit shape.
+    if ('newText' in obj || 'text' in obj) {
+      const newText = typeof obj.newText === 'string'
+        ? obj.newText
+        : typeof obj.text === 'string'
+          ? (obj.text as string)
+          : '';
+      const oldText = typeof obj.oldText === 'string' ? (obj.oldText as string) : null;
+      out.push({ newText, oldText, range: obj.range ?? null });
+      return;
+    }
+    // Otherwise dive into nested edits arrays.
+    if (Array.isArray(obj.edits)) visit(obj.edits);
+    if (Array.isArray(obj.textEdit)) visit(obj.textEdit);
+    if (obj.textEdit) visit(obj.textEdit);
+  };
+  visit(arr);
+  return out;
+}
+
+/**
+ * Normalise a VS Code `textEditGroup` part. The group describes one file's
+ * worth of edits; if no `oldText` is available we still emit a FileEdit but
+ * with `diff: null` (the UI falls back to showing the new content / message).
+ */
+function normaliseTextEditGroup(part: Record<string, unknown>): NormalizedFileEdit | null {
+  const filePath = pathFromUriLike(part.uri) ?? pathFromUriLike(part.resource);
+  if (!filePath) return null;
+  const edits = collectTextEdits(part.edits);
+  if (edits.length === 0) return null;
+
+  const hasOldText = edits.some((e) => typeof e.oldText === 'string' && e.oldText.length > 0);
+  let diff: string | null = null;
+  if (hasOldText) {
+    diff = diffFromHunks(
+      filePath,
+      edits.map((e) => ({ oldString: e.oldText ?? '', newString: e.newText })),
+    );
+  }
+  const ranges = edits
+    .map((e) => formatRange(e.range))
+    .filter((s) => s.length > 0)
+    .join(', ');
+  const summary = ranges ? `Edited ${filePath} (${ranges})` : `Edited ${filePath}`;
+  return {
+    filePath,
+    diff,
+    summary,
+    oldString: hasOldText ? edits.map((e) => e.oldText ?? '').join('\n') : null,
+    newString: edits.map((e) => e.newText).join('\n'),
+    meta: { operation: 'update', status: 'applied', oldPath: null },
+    raw: { edits },
+  };
+}
+
+/**
+ * Normalise a VS Code `workspaceEdit` part. Multiple files may be touched;
+ * one `NormalizedFileEdit` is produced per distinct resource.
+ */
+function normaliseWorkspaceEdit(part: Record<string, unknown>): NormalizedFileEdit[] {
+  const editsArr = Array.isArray(part.edits) ? part.edits : [];
+  // Group by file path.
+  const grouped = new Map<string, CopilotTextEdit[]>();
+  for (const eRaw of editsArr) {
+    if (!eRaw || typeof eRaw !== 'object') continue;
+    const e = eRaw as Record<string, unknown>;
+    const filePath = pathFromUriLike(e.resource) ?? pathFromUriLike(e.uri);
+    if (!filePath) continue;
+    const leaves = collectTextEdits(e.textEdit ?? e.edit ?? e);
+    if (leaves.length === 0) continue;
+    const list = grouped.get(filePath) ?? [];
+    list.push(...leaves);
+    grouped.set(filePath, list);
+  }
+  const out: NormalizedFileEdit[] = [];
+  for (const [filePath, edits] of grouped) {
+    const hasOldText = edits.some((e) => typeof e.oldText === 'string' && e.oldText.length > 0);
+    const diff = hasOldText
+      ? diffFromHunks(
+          filePath,
+          edits.map((e) => ({ oldString: e.oldText ?? '', newString: e.newText })),
+        )
+      : null;
+    out.push({
+      filePath,
+      diff,
+      summary: `Edited ${filePath}`,
+      oldString: hasOldText ? edits.map((e) => e.oldText ?? '').join('\n') : null,
+      newString: edits.map((e) => e.newText).join('\n'),
+      meta: { operation: 'update', status: 'applied', oldPath: null },
+      raw: { edits },
+    });
+  }
+  return out;
+}
+
 export class CopilotParser implements ToolParser {
   constructor(private readonly machineId: string) {}
 
@@ -285,8 +437,6 @@ export class CopilotParser implements ToolParser {
       // carry no semantic content. Syncing them to web UI only adds noise.
       if (
         kind === 'undoStop' ||
-        kind === 'textEditGroup' ||
-        kind === 'workspaceEdit' ||
         kind === 'codeblockUri' ||
         kind === 'mcpServersStarting' ||
         kind === 'progressMessage' ||
@@ -297,6 +447,24 @@ export class CopilotParser implements ToolParser {
         kind === 'questionCarousel' ||
         kind === 'command'
       ) {
+        continue;
+      }
+
+      // ====== textEditGroup -> FileEdit (single file, multiple ranges) ======
+      if (kind === 'textEditGroup') {
+        const edit = normaliseTextEditGroup(part as Record<string, unknown>);
+        if (edit) {
+          blocks.push(buildFileEditBlock(edit, { toolName: 'textEditGroup', toolInput: null }));
+        }
+        continue;
+      }
+
+      // ====== workspaceEdit -> one FileEdit per file ======
+      if (kind === 'workspaceEdit') {
+        const edits = normaliseWorkspaceEdit(part as Record<string, unknown>);
+        for (const edit of edits) {
+          blocks.push(buildFileEditBlock(edit, { toolName: 'workspaceEdit', toolInput: null }));
+        }
         continue;
       }
 

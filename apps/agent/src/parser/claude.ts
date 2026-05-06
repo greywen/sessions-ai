@@ -13,6 +13,13 @@ import type {
 } from './types.ts';
 import type { ParseResult, ToolParser } from './tool-parser.ts';
 import { logger } from '../logger.ts';
+import {
+  buildFileEditBlock,
+  diffFromHunks,
+  diffFromOldNew,
+  type FileEditMeta,
+  type NormalizedFileEdit,
+} from './edit-normalizer.ts';
 
 const CLAUDE_NS = 'claude-code-ns-v1';
 
@@ -161,6 +168,93 @@ function stringifyToolUseResult(raw: unknown): string {
 interface ToolUseIndexEntry {
   name: string;
   input: Record<string, unknown> | null;
+  /**
+   * If the tool_use produced FileEdit blocks (Edit / MultiEdit / Write), we
+   * keep references here so the matching tool_result can flip their status
+   * from `proposed` to `applied` / `failed` instead of emitting a duplicate.
+   */
+  fileEditBlocks?: ContentBlock[];
+}
+
+/**
+ * Normalised file edit entry derived from a Claude `Edit` / `MultiEdit` /
+ * `Write` tool_use. Returns `null` when the tool is not an edit tool or the
+ * input is missing required keys.
+ */
+function normaliseClaudeEdit(
+  toolName: string,
+  input: Record<string, unknown> | null,
+): NormalizedFileEdit[] | null {
+  if (!input) return null;
+  const filePath = asString(input.file_path) ?? asString(input.filePath);
+  if (!filePath) return null;
+
+  if (toolName === 'Edit') {
+    const oldString = asString(input.old_string) ?? '';
+    const newString = asString(input.new_string) ?? '';
+    const diff = diffFromOldNew(filePath, oldString, newString);
+    return [
+      {
+        filePath,
+        diff,
+        summary: `Edited ${filePath}`,
+        oldString,
+        newString,
+        meta: { operation: 'update', status: 'proposed', oldPath: null },
+      },
+    ];
+  }
+
+  if (toolName === 'MultiEdit') {
+    const editsRaw = Array.isArray(input.edits) ? input.edits : [];
+    const hunks: Array<{ oldString: string; newString: string }> = [];
+    for (const e of editsRaw) {
+      const obj = asObject(e);
+      if (!obj) continue;
+      const oldString = asString(obj.old_string) ?? '';
+      const newString = asString(obj.new_string) ?? '';
+      hunks.push({ oldString, newString });
+    }
+    if (hunks.length === 0) return null;
+    const diff = diffFromHunks(filePath, hunks);
+    return [
+      {
+        filePath,
+        diff,
+        summary: `Edited ${filePath} (${hunks.length} hunks)`,
+        oldString: hunks.map((h) => h.oldString).join('\n') || null,
+        newString: hunks.map((h) => h.newString).join('\n') || null,
+        meta: { operation: 'update', status: 'proposed', oldPath: null },
+      },
+    ];
+  }
+
+  if (toolName === 'Write') {
+    const content = asString(input.content) ?? '';
+    const diff = diffFromOldNew(filePath, '', content);
+    return [
+      {
+        filePath,
+        diff,
+        summary: `Wrote ${filePath}`,
+        oldString: '',
+        newString: content,
+        meta: { operation: 'create', status: 'proposed', oldPath: null },
+      },
+    ];
+  }
+
+  return null;
+}
+
+function setEditStatus(blocks: ContentBlock[] | undefined, status: FileEditMeta['status']): void {
+  if (!blocks) return;
+  for (const b of blocks) {
+    const ti = b.toolInput as Record<string, unknown> | null;
+    if (!ti) continue;
+    const meta = ti.editMeta as FileEditMeta | undefined;
+    if (meta) meta.status = status;
+  }
 }
 
 interface ParsedBlocks {
@@ -170,11 +264,17 @@ interface ParsedBlocks {
   hasToolResult: boolean;
 }
 
+interface ClaudeBlocksContext {
+  cwd: string | null;
+  gitBranch: string | null;
+}
+
 function parseClaudeBlocks(
   content: unknown,
   toolUseResultRaw: unknown,
   sourceSessionId: string,
   toolUseIndex: Map<string, ToolUseIndexEntry>,
+  ctx: ClaudeBlocksContext = { cwd: null, gitBranch: null },
 ): ParsedBlocks {
   const result: ParsedBlocks = {
     blocks: [],
@@ -210,6 +310,31 @@ function parseClaudeBlocks(
       const name = asString(item.name) ?? 'unknown';
       const input = parseToolInput(item.input);
       const toolUseId = asString(item.id);
+
+      // Edit / MultiEdit / Write -> emit structured FileEdit blocks so the
+      // viewer can render a diff, and keep references for status flipping.
+      const edits = normaliseClaudeEdit(name, input);
+      if (edits && edits.length > 0) {
+        const editBlocks = edits.map((e) =>
+          buildFileEditBlock(e, {
+            toolName: name,
+            toolInput: input,
+            cwd: ctx.cwd,
+            gitBranch: ctx.gitBranch,
+          }),
+        );
+        for (const b of editBlocks) result.blocks.push(b);
+        if (toolUseId) {
+          toolUseIndex.set(`${sourceSessionId}::${toolUseId}`, {
+            name,
+            input,
+            fileEditBlocks: editBlocks,
+          });
+        }
+        result.hasToolUse = true;
+        continue;
+      }
+
       if (toolUseId) toolUseIndex.set(`${sourceSessionId}::${toolUseId}`, { name, input });
       const command = input && typeof input.command === 'string' ? input.command : null;
       result.blocks.push({
@@ -229,6 +354,23 @@ function parseClaudeBlocks(
       const fallback = stringifyToolUseResult(toolUseResultRaw);
       const contentText = fromContent.length > 0 ? fromContent : fallback;
       const isError = item.is_error === true;
+
+      // If the tool_use already produced FileEdit blocks, just flip their
+      // status — don't emit a duplicate FileEdit block. We still surface
+      // an Error block when the apply failed.
+      if (linked?.fileEditBlocks && linked.fileEditBlocks.length > 0) {
+        setEditStatus(linked.fileEditBlocks, isError ? 'failed' : 'applied');
+        if (isError) {
+          result.blocks.push({
+            ...emptyBlock('Error', truncate(contentText)),
+            toolName: name,
+            toolInput: linked.input,
+          });
+        }
+        result.hasToolResult = true;
+        continue;
+      }
+
       result.blocks.push({
         ...emptyBlock(isError ? 'Error' : resultBlockTypeForToolName(name), truncate(contentText)),
         toolName: name,
@@ -371,6 +513,10 @@ export class ClaudeCodeParser implements ToolParser {
         parsedLine.toolUseResult,
         sourceSessionId,
         toolUseIndex,
+        {
+          cwd: asString(parsedLine.cwd),
+          gitBranch: asString(parsedLine.gitBranch),
+        },
       );
 
       if (blocksParsed.blocks.length === 0) {

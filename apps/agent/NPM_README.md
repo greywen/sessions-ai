@@ -55,6 +55,8 @@ sessions-ai start                 # foreground supervisor with crash-restart
 sessions-ai service install       # install + start
 sessions-ai service install --no-start
 sessions-ai service uninstall     # stop + remove
+sessions-ai service status        # show service runtime status
+sessions-ai status                # alias of service status
 sessions-ai cache clear           # drop incremental offsets, re-scan everything
 sessions-ai cache clear --all     # also drop auth_key (forces re-registration)
 sessions-ai config show

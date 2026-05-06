@@ -81,7 +81,9 @@ sessions-ai run                       # 前台单次运行（调试）
 sessions-ai start                     # 前台 supervisor
 sessions-ai service install [opts]    # 安装当前平台 autostart
 sessions-ai service uninstall
+sessions-ai service status
 sessions-ai service print             # dry-run，预览生成的产物
+sessions-ai status                    # sessions-ai service status 的别名
 sessions-ai config show
 sessions-ai config set serverUrl http://localhost:23712
 sessions-ai cache clear [--all]

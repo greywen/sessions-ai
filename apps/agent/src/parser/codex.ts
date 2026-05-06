@@ -13,6 +13,11 @@ import type {
 } from './types.ts';
 import type { ParseResult, ToolParser } from './tool-parser.ts';
 import { logger } from '../logger.ts';
+import {
+  buildFileEditBlock,
+  parseApplyPatch,
+  type FileEditMeta,
+} from './edit-normalizer.ts';
 
 const CODEX_NS = 'codex-ns-v1';
 
@@ -90,6 +95,18 @@ interface PendingFunctionCall {
   name: string;
   args: string;
   ts: string;
+  /** FileEdit blocks emitted for this call (e.g. apply_patch sections). */
+  fileEditBlocks?: ContentBlock[];
+}
+
+function setEditStatus(blocks: ContentBlock[] | undefined, status: FileEditMeta['status']): void {
+  if (!blocks) return;
+  for (const b of blocks) {
+    const ti = b.toolInput as Record<string, unknown> | null;
+    if (!ti) continue;
+    const meta = ti.editMeta as FileEditMeta | undefined;
+    if (meta) meta.status = status;
+  }
 }
 
 export class CodexParser implements ToolParser {
@@ -328,7 +345,35 @@ export class CodexParser implements ToolParser {
           (payload.arguments as string | undefined) ??
           (payload.input as string | undefined) ??
           '';
-        if (callId) pendingFunctionCalls.set(callId, { callId, name, args, ts });
+        const pending: PendingFunctionCall = { callId, name, args, ts };
+
+        // apply_patch: parse the envelope and emit one FileEdit per file.
+        if (name === 'apply_patch' && lastAssistantIndex >= 0) {
+          let patchText = '';
+          try {
+            const parsedArgs = args ? (JSON.parse(args) as Record<string, unknown>) : {};
+            const inputField = parsedArgs.input;
+            patchText = typeof inputField === 'string' ? inputField : '';
+          } catch {
+            patchText = args;
+          }
+          const edits = parseApplyPatch(patchText);
+          if (edits.length > 0) {
+            const editBlocks = edits.map((e) =>
+              buildFileEditBlock(e, {
+                toolName: 'apply_patch',
+                toolInput: { input: patchText },
+                cwd: meta.cwd,
+              }),
+            );
+            for (const b of editBlocks) {
+              messages[lastAssistantIndex].contentBlocks.push(b);
+            }
+            pending.fileEditBlocks = editBlocks;
+          }
+        }
+
+        if (callId) pendingFunctionCalls.set(callId, pending);
         continue;
       }
 
@@ -352,6 +397,24 @@ export class CodexParser implements ToolParser {
             parsedInput = { raw: pending.args };
           }
         }
+
+        // For apply_patch we already emitted FileEdit blocks at function_call
+        // time; just flip their status based on the output and don't duplicate.
+        // Keep the pending entry around so a later patch_apply_end can also
+        // refine the status without re-emitting blocks.
+        if (pending?.fileEditBlocks && pending.fileEditBlocks.length > 0) {
+          const lower = output.toLowerCase();
+          const failed = lower.includes('error') || lower.includes('failed') || lower.includes('rejected');
+          setEditStatus(pending.fileEditBlocks, failed ? 'failed' : 'applied');
+          if (failed && lastAssistantIndex >= 0) {
+            messages[lastAssistantIndex].contentBlocks.push({
+              ...emptyBlock('Error', output.length > 4000 ? `${output.slice(0, 4000)}\n…[truncated]` : output),
+              toolName: name,
+            });
+          }
+          continue;
+        }
+
         const block: ContentBlock = {
           ...emptyBlock(classifyToolName(name)),
           content: output.length > 4000 ? `${output.slice(0, 4000)}\n…[truncated]` : output,
@@ -390,9 +453,24 @@ export class CodexParser implements ToolParser {
         continue;
       }
 
-      // event_msg.patch_apply_end: edits applied.
+      // event_msg.patch_apply_end: edits applied. If we have pending
+      // FileEdit blocks for the call_id, flip their status; otherwise fall
+      // back to a generic FileEdit summary.
       if (ln.type === 'event_msg' && payload.type === 'patch_apply_end') {
         const stdout = typeof payload.stdout === 'string' ? payload.stdout : '';
+        const callId = typeof payload.call_id === 'string' ? payload.call_id : '';
+        const success = payload.success !== false; // default to applied when missing
+        const pending = callId ? pendingFunctionCalls.get(callId) : undefined;
+        if (pending?.fileEditBlocks && pending.fileEditBlocks.length > 0) {
+          setEditStatus(pending.fileEditBlocks, success ? 'applied' : 'failed');
+          if (!success && stdout && lastAssistantIndex >= 0) {
+            messages[lastAssistantIndex].contentBlocks.push({
+              ...emptyBlock('Error', stdout),
+              toolName: 'apply_patch',
+            });
+          }
+          continue;
+        }
         if (stdout && lastAssistantIndex >= 0) {
           messages[lastAssistantIndex].contentBlocks.push({
             ...emptyBlock('FileEdit', stdout),
