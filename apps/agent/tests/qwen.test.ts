@@ -402,3 +402,134 @@ describe('QwenCodeParser - legacy qwen logs compatibility', () => {
     expect(r.messages[1].contentBlocks[0].toolInput).toEqual({ path: 'a.ts' });
   });
 });
+
+describe('QwenCodeParser - FileEdit normalization', () => {
+  test('replace tool emits FileEdit with diff', async () => {
+    const file = writeQoderJsonl([
+      {
+        uuid: 'aaaaaaaa-eeee-4eee-8eee-eeeeeeeeeeee',
+        sessionId: 'task-edit.session.execution',
+        type: 'assistant',
+        timestamp: '2026-05-01T10:00:00.000Z',
+        message: {
+          id: 'm-edit-1',
+          role: 'assistant',
+          content: [
+            {
+              type: 'tool_use',
+              name: 'replace',
+              id: 'toolu_e1',
+              input: {
+                file_path: 'src/foo.ts',
+                old_string: 'a = 1',
+                new_string: 'a = 2',
+              },
+            },
+          ],
+        },
+      },
+    ]);
+    const p = new QwenCodeParser('m1');
+    const r = await p.parseIncremental(file, 0);
+    expect(r.messages.length).toBe(1);
+    const block = r.messages[0].contentBlocks[0];
+    expect(block.blockType).toBe('FileEdit');
+    expect(block.filePath).toBe('src/foo.ts');
+    expect(block.diff).toContain('-a = 1');
+    expect(block.diff).toContain('+a = 2');
+    expect((block.toolInput as Record<string, unknown>).editMeta).toMatchObject({
+      operation: 'update',
+      status: 'proposed',
+    });
+  });
+
+  test('write_file tool emits FileEdit create', async () => {
+    const file = writeQoderJsonl([
+      {
+        uuid: 'bbbbbbbb-eeee-4eee-8eee-eeeeeeeeeeee',
+        sessionId: 'task-edit2.session.execution',
+        type: 'assistant',
+        timestamp: '2026-05-01T10:00:01.000Z',
+        message: {
+          id: 'm-edit-2',
+          role: 'assistant',
+          content: [
+            {
+              type: 'tool_use',
+              name: 'write_file',
+              id: 'toolu_e2',
+              input: { file_path: 'NEW.md', content: '# Hi\n' },
+            },
+          ],
+        },
+      },
+    ]);
+    const p = new QwenCodeParser('m1');
+    const r = await p.parseIncremental(file, 0);
+    const block = r.messages[0].contentBlocks[0];
+    expect(block.blockType).toBe('FileEdit');
+    expect(block.filePath).toBe('NEW.md');
+    expect((block.toolInput as Record<string, unknown>).editMeta).toMatchObject({
+      operation: 'create',
+      status: 'proposed',
+    });
+    expect(block.diff).toContain('+# Hi');
+  });
+
+  test('legacy tool_call with edit_file maps to FileEdit applied/failed by result text', async () => {
+    const file = writeLegacyLogs([
+      {
+        sessionId: 's-1',
+        messageId: 1,
+        type: 'tool_call',
+        timestamp: '2026-05-02T10:00:00.000Z',
+        toolName: 'edit',
+        toolArgs: { file_path: 'x.ts', old_string: 'A', new_string: 'B' },
+        toolResult: 'edit applied successfully',
+      },
+      {
+        sessionId: 's-1',
+        messageId: 2,
+        type: 'tool_call',
+        timestamp: '2026-05-02T10:00:01.000Z',
+        toolName: 'edit',
+        toolArgs: { file_path: 'y.ts', old_string: 'C', new_string: 'D' },
+        toolResult: 'Error: file not found',
+      },
+    ]);
+    const p = new QwenCodeParser('m1');
+    const r = await p.parseIncremental(file, 0);
+    expect(r.messages.length).toBe(2);
+    const e1 = r.messages[0].contentBlocks[0];
+    expect(e1.blockType).toBe('FileEdit');
+    expect((e1.toolInput as Record<string, unknown>).editMeta).toMatchObject({
+      operation: 'update',
+      status: 'applied',
+    });
+    const e2 = r.messages[1].contentBlocks[0];
+    expect((e2.toolInput as Record<string, unknown>).editMeta).toMatchObject({
+      status: 'failed',
+    });
+  });
+
+  test('non-edit tool_use stays as ToolCall', async () => {
+    const file = writeQoderJsonl([
+      {
+        uuid: 'cccccccc-eeee-4eee-8eee-eeeeeeeeeeee',
+        sessionId: 'task-grep.session.execution',
+        type: 'assistant',
+        timestamp: '2026-05-01T10:00:02.000Z',
+        message: {
+          id: 'm-grep',
+          role: 'assistant',
+          content: [
+            { type: 'tool_use', name: 'Bash', id: 'toolu_g', input: { command: 'ls' } },
+          ],
+        },
+      },
+    ]);
+    const p = new QwenCodeParser('m1');
+    const r = await p.parseIncremental(file, 0);
+    expect(r.messages[0].contentBlocks[0].blockType).toBe('ShellCommand');
+  });
+});

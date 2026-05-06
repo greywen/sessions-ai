@@ -9,6 +9,8 @@ import { CodexParser } from '../parser/codex.ts';
 import { ClaudeCodeParser } from '../parser/claude.ts';
 import { CursorParser } from '../parser/cursor.ts';
 import { QwenCodeParser } from '../parser/qwen.ts';
+import { GeminiCliParser } from '../parser/gemini.ts';
+import { CodeBuddyParser } from '../parser/codebuddy.ts';
 import { AuthManager } from '../identity/auth.ts';
 import { generateFingerprint } from '../identity/fingerprint.ts';
 import { FileWatcher, type WatchPath } from './watcher.ts';
@@ -115,6 +117,8 @@ function parserToolAliases(toolType: string): string[] {
       return ['geminicli', 'gemini'];
     case 'qwencode':
       return ['qwencode', 'qwen', 'qcoder', 'qoder'];
+    case 'codebuddy':
+      return ['codebuddy', 'tencent', 'codingcopilot'];
     default:
       return [normalized];
   }
@@ -161,6 +165,8 @@ export class Agent {
       new CodexParser(machineId),
       new CursorParser(machineId),
       new QwenCodeParser(machineId),
+      new GeminiCliParser(machineId),
+      new CodeBuddyParser(machineId),
     ];
     const enabled = this.cfg.enabledTools;
     const enabledNormalized = new Set([...enabled].map((item) => normalizeToolToken(item)));

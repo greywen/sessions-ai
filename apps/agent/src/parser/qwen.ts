@@ -12,6 +12,13 @@ import type {
   UnifiedMessage,
 } from './types.ts';
 import type { ParseResult, ToolParser } from './tool-parser.ts';
+import {
+  buildFileEditBlock,
+  diffFromOldNew,
+  type FileEditOperation,
+  type FileEditStatus,
+  type NormalizedFileEdit,
+} from './edit-normalizer.ts';
 import { logger } from '../logger.ts';
 
 const QWEN_NS = 'qwen-ns-v1';
@@ -96,6 +103,79 @@ function classifyToolName(name: string): ContentBlockType {
   if (n.includes('search') || n.includes('grep') || n.includes('find')) return 'SearchResult';
   if (n.includes('web') || n.startsWith('mcp_')) return 'McpCall';
   return 'ToolCall';
+}
+
+/** Tool names that mutate files in Qwen / Qoder / Gemini-derived agents. */
+const QWEN_EDIT_TOOLS = new Set([
+  'edit',
+  'replace',
+  'write_file',
+  'writefile',
+  'write',
+  'create_file',
+  'apply_patch',
+  'multiedit',
+  'multi_edit',
+  'delete_file',
+]);
+
+function asStringOrNull(v: unknown): string | null {
+  return typeof v === 'string' && v.length > 0 ? v : null;
+}
+
+/**
+ * Build a NormalizedFileEdit from a Qwen-style tool input. Returns null if
+ * the tool is not recognised as an edit tool or no file path can be derived.
+ */
+function normaliseQwenEdit(
+  toolName: string,
+  input: Record<string, unknown> | null,
+  status: FileEditStatus = 'proposed',
+): NormalizedFileEdit | null {
+  const lower = toolName.toLowerCase();
+  if (!QWEN_EDIT_TOOLS.has(lower)) return null;
+
+  const filePath =
+    asStringOrNull(input?.file_path)
+    ?? asStringOrNull(input?.filePath)
+    ?? asStringOrNull(input?.path)
+    ?? asStringOrNull(input?.target_file);
+  if (!filePath) return null;
+
+  let operation: FileEditOperation = 'update';
+  if (lower === 'delete_file') operation = 'delete';
+  else if (lower === 'create_file' || lower === 'write_file' || lower === 'writefile' || lower === 'write') {
+    operation = 'create';
+  }
+
+  const oldString = asStringOrNull(input?.old_string);
+  const newString =
+    asStringOrNull(input?.new_string)
+    ?? asStringOrNull(input?.content)
+    ?? asStringOrNull(input?.code_edit);
+
+  let diff: string | null = null;
+  let summary: string;
+  if (operation === 'delete') {
+    summary = `Deleted ${filePath}`;
+  } else if (operation === 'create') {
+    diff = diffFromOldNew(filePath, '', newString ?? '');
+    summary = `Created ${filePath}`;
+  } else {
+    if (oldString !== null || newString !== null) {
+      diff = diffFromOldNew(filePath, oldString ?? '', newString ?? '');
+    }
+    summary = `Edited ${filePath}`;
+  }
+
+  return {
+    filePath,
+    diff,
+    summary,
+    oldString,
+    newString,
+    meta: { operation, status, oldPath: null },
+  };
 }
 
 interface QoderUsage {
@@ -312,11 +392,18 @@ function parseQoderBlocks(
       const toolInput = asObject(item.input);
       const toolUseId = typeof item.id === 'string' ? item.id : null;
       if (toolUseId) toolUseIndex.set(toolUseId, { name: toolName, input: toolInput });
-      result.blocks.push({
-        ...emptyBlock(classifyToolName(toolName), `Tool: ${toolName}`),
-        toolName,
-        toolInput,
-      });
+      const editNormalized = normaliseQwenEdit(toolName, toolInput, 'proposed');
+      if (editNormalized) {
+        result.blocks.push(
+          buildFileEditBlock(editNormalized, { toolName, toolInput }),
+        );
+      } else {
+        result.blocks.push({
+          ...emptyBlock(classifyToolName(toolName), `Tool: ${toolName}`),
+          toolName,
+          toolInput,
+        });
+      }
       result.hasToolUse = true;
       continue;
     }
@@ -829,11 +916,25 @@ export class QwenCodeParser implements ToolParser {
       if (entry.type === 'tool_call') {
         const toolName = entry.toolName ?? 'unknown';
         const result = stringifyUnknown(entry.toolResult);
-        blocks.push({
-          ...emptyBlock(classifyToolName(toolName), truncate(result || `Tool: ${toolName}`)),
-          toolName,
-          toolInput: entry.toolArgs ?? null,
-        });
+        const lowerResult = result.toLowerCase();
+        const status: FileEditStatus = lowerResult.includes('error') || lowerResult.includes('failed')
+          ? 'failed'
+          : 'applied';
+        const editNormalized = normaliseQwenEdit(toolName, entry.toolArgs ?? null, status);
+        if (editNormalized) {
+          blocks.push(
+            buildFileEditBlock(editNormalized, {
+              toolName,
+              toolInput: entry.toolArgs ?? null,
+            }),
+          );
+        } else {
+          blocks.push({
+            ...emptyBlock(classifyToolName(toolName), truncate(result || `Tool: ${toolName}`)),
+            toolName,
+            toolInput: entry.toolArgs ?? null,
+          });
+        }
       } else {
         blocks.push(
           emptyBlock(entry.type === 'error' ? 'Error' : 'Text', stringifyUnknown(entry.message)),

@@ -7,7 +7,8 @@ export type ToolType =
   | 'Aider'
   | 'GitHubCopilot'
   | 'Codex'
-  | 'QwenCode';
+  | 'QwenCode'
+  | 'CodeBuddy';
 
 // Message Role Enumeration
 export type MessageRole = 'User' | 'Assistant' | 'System' | 'ToolUse' | 'ToolResult';

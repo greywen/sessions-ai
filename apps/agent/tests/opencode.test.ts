@@ -495,3 +495,103 @@ describe('OpenCodeParser - 杂项', () => {
     }
   });
 });
+
+describe('OpenCodeParser - FileEdit normalization', () => {
+  test('edit tool with oldString/newString builds diff and applied editMeta', async () => {
+    insertSession({ id: 's-edit', title: 't' });
+    insertMessage({ id: 'm-edit', sessionId: 's-edit', role: 'assistant', timeCreated: 1 });
+    insertPart({
+      id: 'p-edit',
+      messageId: 'm-edit',
+      sessionId: 's-edit',
+      timeCreated: 1,
+      data: {
+        type: 'tool',
+        tool: 'edit',
+        state: {
+          input: { filePath: 'src/a.ts', oldString: 'foo', newString: 'bar' },
+          status: 'completed',
+        },
+      },
+    });
+    const parser = new OpenCodeParser('m');
+    const { messages } = await parser.parseIncremental(dbPath, 0);
+    const block = messages[0].contentBlocks[0];
+    expect(block.blockType).toBe('FileEdit');
+    expect(block.filePath).toBe('src/a.ts');
+    expect(block.diff).toContain('-foo');
+    expect(block.diff).toContain('+bar');
+    expect((block.toolInput as Record<string, unknown>).editMeta).toMatchObject({
+      operation: 'update',
+      status: 'applied',
+    });
+  });
+
+  test('write tool emits FileEdit create with content diff', async () => {
+    insertSession({ id: 's-write', title: 't' });
+    insertMessage({ id: 'm-write', sessionId: 's-write', role: 'assistant', timeCreated: 1 });
+    insertPart({
+      id: 'p-write',
+      messageId: 'm-write',
+      sessionId: 's-write',
+      timeCreated: 1,
+      data: {
+        type: 'tool',
+        tool: 'write',
+        state: { input: { filePath: 'NEW.md', content: '# Hi\n' }, status: 'completed' },
+      },
+    });
+    const parser = new OpenCodeParser('m');
+    const { messages } = await parser.parseIncremental(dbPath, 0);
+    const block = messages[0].contentBlocks[0];
+    expect(block.blockType).toBe('FileEdit');
+    expect(block.filePath).toBe('NEW.md');
+    expect(block.diff).toContain('+# Hi');
+    expect((block.toolInput as Record<string, unknown>).editMeta).toMatchObject({
+      operation: 'create',
+      status: 'applied',
+    });
+  });
+
+  test('edit tool with raw diff string preserves diff field', async () => {
+    insertSession({ id: 's-rd', title: 't' });
+    insertMessage({ id: 'm-rd', sessionId: 's-rd', role: 'assistant', timeCreated: 1 });
+    insertPart({
+      id: 'p-rd',
+      messageId: 'm-rd',
+      sessionId: 's-rd',
+      timeCreated: 1,
+      data: {
+        type: 'tool',
+        tool: 'edit',
+        state: { input: { filePath: '/tmp/x.rs', diff: '+1\n-0' }, status: 'error' },
+      },
+    });
+    const parser = new OpenCodeParser('m');
+    const { messages } = await parser.parseIncremental(dbPath, 0);
+    const block = messages[0].contentBlocks[0];
+    expect(block.blockType).toBe('FileEdit');
+    expect(block.diff).toBe('+1\n-0');
+    expect((block.toolInput as Record<string, unknown>).editMeta).toMatchObject({
+      operation: 'update',
+      status: 'failed',
+    });
+  });
+
+  test('non-edit tool keeps original ToolCall classification', async () => {
+    insertSession({ id: 's-bash', title: 't' });
+    insertMessage({ id: 'm-bash', sessionId: 's-bash', role: 'assistant', timeCreated: 1 });
+    insertPart({
+      id: 'p-bash',
+      messageId: 'm-bash',
+      sessionId: 's-bash',
+      timeCreated: 1,
+      data: { type: 'tool', tool: 'bash', state: { input: { command: 'ls' }, output: 'a' } },
+    });
+    const parser = new OpenCodeParser('m');
+    const { messages } = await parser.parseIncremental(dbPath, 0);
+    const block = messages[0].contentBlocks[0];
+    expect(block.blockType).toBe('ShellCommand');
+    expect((block.toolInput as Record<string, unknown> | null)?.editMeta).toBeUndefined();
+  });
+});

@@ -6,6 +6,13 @@ import { createHash } from 'node:crypto';
 
 import type { ToolType, UnifiedMessage, ContentBlock, ContentBlockType, MessageRole } from './types.ts';
 import type { ParseResult, ToolParser } from './tool-parser.ts';
+import {
+  buildFileEditBlock,
+  diffFromOldNew,
+  type FileEditOperation,
+  type FileEditStatus,
+  type NormalizedFileEdit,
+} from './edit-normalizer.ts';
 import { logger } from '../logger.ts';
 
 /**
@@ -41,6 +48,83 @@ function classifyTool(toolName: string): ContentBlockType {
   if (['search', 'grep', 'find'].includes(n)) return 'SearchResult';
   if (n.startsWith('mcp_') || n.includes('mcp')) return 'McpCall';
   return 'ToolCall';
+}
+
+const OPENCODE_EDIT_TOOLS = new Set([
+  'edit',
+  'write',
+  'file_edit',
+  'patch',
+  'file_patch',
+  'multiedit',
+  'multi_edit',
+  'create_file',
+  'delete_file',
+]);
+
+function asStringOrNull(v: unknown): string | null {
+  return typeof v === 'string' && v.length > 0 ? v : null;
+}
+
+function mapOpenCodeStatus(status: unknown): FileEditStatus {
+  const s = typeof status === 'string' ? status.toLowerCase() : '';
+  if (s === 'completed' || s === 'success' || s === 'applied') return 'applied';
+  if (s === 'error' || s === 'failed' || s === 'rejected') return 'failed';
+  if (s === 'pending' || s === 'running' || s === 'in_progress') return 'proposed';
+  // OpenCode persists tool parts after execution; treat unspecified as applied.
+  return 'applied';
+}
+
+function normaliseOpenCodeEdit(
+  toolName: string,
+  input: Record<string, unknown> | null,
+  status: FileEditStatus,
+): NormalizedFileEdit | null {
+  const lower = toolName.toLowerCase();
+  if (!OPENCODE_EDIT_TOOLS.has(lower)) return null;
+
+  const filePath =
+    asStringOrNull(input?.filePath)
+    ?? asStringOrNull(input?.file_path)
+    ?? asStringOrNull(input?.path)
+    ?? asStringOrNull(input?.target_file);
+  if (!filePath) return null;
+
+  let operation: FileEditOperation = 'update';
+  if (lower === 'delete_file') operation = 'delete';
+  else if (lower === 'write' || lower === 'create_file') operation = 'create';
+
+  const oldString = asStringOrNull(input?.oldString) ?? asStringOrNull(input?.old_string);
+  const newString =
+    asStringOrNull(input?.newString)
+    ?? asStringOrNull(input?.new_string)
+    ?? asStringOrNull(input?.content);
+  const rawDiff = asStringOrNull(input?.diff) ?? asStringOrNull(input?.patch);
+
+  let diff: string | null = null;
+  let summary: string;
+  if (operation === 'delete') {
+    summary = `Deleted ${filePath}`;
+  } else if (operation === 'create') {
+    diff = diffFromOldNew(filePath, '', newString ?? '');
+    summary = `Created ${filePath}`;
+  } else {
+    if (oldString !== null || newString !== null) {
+      diff = diffFromOldNew(filePath, oldString ?? '', newString ?? '');
+    } else if (rawDiff !== null) {
+      diff = rawDiff;
+    }
+    summary = `Edited ${filePath}`;
+  }
+
+  return {
+    filePath,
+    diff,
+    summary,
+    oldString,
+    newString,
+    meta: { operation, status, oldPath: null },
+  };
 }
 
 function millisToIso(ms: number): string {
@@ -271,22 +355,33 @@ export class OpenCodeParser implements ToolParser {
         const state = part.state as Record<string, unknown> | undefined;
         const input = state?.input as Record<string, unknown> | undefined;
         const output = state?.output;
-        const blockType = classifyTool(toolName);
-        const filePath =
-          (input?.filePath as string | undefined) ?? (input?.path as string | undefined) ?? null;
-        const diff = (input?.diff as string | undefined) ?? (input?.content as string | undefined) ?? null;
-        blocks.push({
-          blockType,
-          content:
-            typeof output === 'string' && output.length > 0 ? output : `Tool: ${toolName}`,
-          language: null,
-          filePath,
-          diff,
-          toolName,
-          toolInput: (input as Record<string, unknown>) ?? null,
-          exitCode: null,
-          isCollapsed: false,
-        });
+        const status = mapOpenCodeStatus(state?.status);
+        const editNormalized = normaliseOpenCodeEdit(toolName, input ?? null, status);
+        if (editNormalized) {
+          blocks.push(
+            buildFileEditBlock(editNormalized, {
+              toolName,
+              toolInput: input ?? null,
+            }),
+          );
+        } else {
+          const blockType = classifyTool(toolName);
+          const filePath =
+            (input?.filePath as string | undefined) ?? (input?.path as string | undefined) ?? null;
+          const diff = (input?.diff as string | undefined) ?? (input?.content as string | undefined) ?? null;
+          blocks.push({
+            blockType,
+            content:
+              typeof output === 'string' && output.length > 0 ? output : `Tool: ${toolName}`,
+            language: null,
+            filePath,
+            diff,
+            toolName,
+            toolInput: (input as Record<string, unknown>) ?? null,
+            exitCode: null,
+            isCollapsed: false,
+          });
+        }
       }
       // step-start / step-finish are not rendered
     }
