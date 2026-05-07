@@ -196,7 +196,6 @@ export default function UsersPage() {
                     <TableHead>{t('users.col.role')}</TableHead>
                     <TableHead>{t('users.col.deviceCount')}</TableHead>
                     <TableHead>{t('users.col.createdAt')}</TableHead>
-                    <TableHead className="w-[100px]" />
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -214,16 +213,6 @@ export default function UsersPage() {
                         <TableCell><Badge variant={roleVariant}>{roleLabel(user.role)}</Badge></TableCell>
                         <TableCell className="font-mono tabular-nums">{user.deviceCount}</TableCell>
                         <TableCell className="text-sm">{format(new Date(user.createdAt), 'yyyy-MM-dd')}</TableCell>
-                        <TableCell>
-                          <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
-                            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openEdit(user)}>
-                              <Pencil className="h-3.5 w-3.5" />
-                            </Button>
-                            <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => setDeleteUser(user)}>
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </Button>
-                          </div>
-                        </TableCell>
                       </TableRow>
                     );
                   })}

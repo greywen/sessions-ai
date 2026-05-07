@@ -7,7 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { TimeRangeSelector, getDefaultRange, type TimeRangeValue } from '@/components/shared/time-range-selector';
+import { TimeRangeSelector, getMonthToDateRange, type TimeRangeValue } from '@/components/shared/time-range-selector';
 import {
   BarChart, Bar, Cell, LineChart, Line,
   XAxis, YAxis, CartesianGrid,
@@ -78,7 +78,7 @@ export default function CostsPage() {
   const { t } = useI18n();
   const [data, setData] = React.useState<CostData | null>(null);
   const [loading, setLoading] = React.useState(true);
-  const [range, setRange] = React.useState<TimeRangeValue>(() => getDefaultRange(30));
+  const [range, setRange] = React.useState<TimeRangeValue>(() => getMonthToDateRange());
   const [groupBy, setGroupBy] = React.useState('tool');
 
   const fetchCosts = React.useCallback(async () => {

@@ -12,7 +12,7 @@ import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { TimeRangeSelector, getDefaultRange, rangeToIsoBounds, type TimeRangeValue } from '@/components/shared/time-range-selector';
+import { TimeRangeSelector, getMonthToDateRange, rangeToIsoBounds, type TimeRangeValue } from '@/components/shared/time-range-selector';
 import { ModelLogo, ToolLogo, getToolLabel } from '@/components/branding/ai-logo';
 import { ContentBlockRenderer } from '@/components/sessions/content-block-renderer';
 import { TokenUsageBar } from '@/components/sessions/token-usage-bar';
@@ -98,7 +98,7 @@ export default function SessionsPage() {
   const [toolFilter, setToolFilter] = React.useState<string>('all');
   const [userFilter, setUserFilter] = React.useState<string>('all');
   const [favoriteFilter, setFavoriteFilter] = React.useState<'all' | 'favorited' | 'unfavorited'>('all');
-  const [timeRange, setTimeRange] = React.useState<TimeRangeValue>(() => getDefaultRange(30));
+  const [timeRange, setTimeRange] = React.useState<TimeRangeValue>(() => getMonthToDateRange());
   const [searchInput, setSearchInput] = React.useState('');
   const [searchQuery, setSearchQuery] = React.useState('');
   const [users, setUsers] = React.useState<UserItem[]>([]);

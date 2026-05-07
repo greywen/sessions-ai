@@ -20,7 +20,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { TimeRangeSelector, getDefaultRange, type TimeRangeValue } from '@/components/shared/time-range-selector';
+import { TimeRangeSelector, getMonthToDateRange, type TimeRangeValue } from '@/components/shared/time-range-selector';
 import {
   Bar,
   BarChart,
@@ -119,7 +119,7 @@ export default function DashboardPage() {
   const { t, locale } = useI18n();
   const [data, setData] = React.useState<DashboardData | null>(null);
   const [loading, setLoading] = React.useState(true);
-  const [range, setRange] = React.useState<TimeRangeValue>(() => getDefaultRange(30));
+  const [range, setRange] = React.useState<TimeRangeValue>(() => getMonthToDateRange());
 
   const fetchDashboard = React.useCallback(async () => {
     setLoading(true);

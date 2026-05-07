@@ -472,7 +472,6 @@ export default function DevicesPage() {
                       <TableHead>{t('devices.col.user')}</TableHead>
                       <TableHead>{t('devices.col.status')}</TableHead>
                       <TableHead>{t('devices.col.lastSeen')}</TableHead>
-                      <TableHead className="w-[60px]" />
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -498,17 +497,6 @@ export default function DevicesPage() {
                           <TableCell><Badge variant={statusVariant}>{getStatusLabel(device.status)}</Badge></TableCell>
                           <TableCell className="text-xs text-muted-foreground">
                             {device.lastSeenAt ? formatDistanceToNow(new Date(device.lastSeenAt), { addSuffix: true, locale: dateFnsLocale(locale) }) : t('devices.neverOnline')}
-                          </TableCell>
-                          <TableCell onClick={(e) => e.stopPropagation()}>
-                            <DropdownMenu>
-                              <DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger>
-                              <DropdownMenuContent align="end">
-                                {device.status === 'pending' && <DropdownMenuItem onClick={() => requestAction(device, 'approve')}><CheckCircle className="mr-2 h-4 w-4 text-emerald-500" />{t('devices.action.approve')}</DropdownMenuItem>}
-                                {device.status === 'active' && <DropdownMenuItem onClick={() => requestAction(device, 'disable')}><XCircle className="mr-2 h-4 w-4 text-red-500" />{t('devices.action.disable')}</DropdownMenuItem>}
-                                {device.status === 'disabled' && <DropdownMenuItem onClick={() => requestAction(device, 'enable')}><CheckCircle className="mr-2 h-4 w-4 text-emerald-500" />{t('devices.action.enable')}</DropdownMenuItem>}
-                                <DropdownMenuSeparator />
-                              </DropdownMenuContent>
-                            </DropdownMenu>
                           </TableCell>
                         </TableRow>
                       );

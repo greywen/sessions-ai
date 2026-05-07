@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { toast } from 'sonner';
-import { Plus, Pencil, Trash2, FileJson, Copy, Search } from 'lucide-react';
+import { Pencil, Trash2, FileJson, Copy, Search } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
@@ -109,18 +109,6 @@ export default function ConfigsPage() {
 
   // ==================== Form Action ====================
 
-  const resetForm = (type = 'claude_code') => {
-    setFormName('');
-    setFormType(type);
-    setFormPayload(JSON.stringify(TEMPLATES[type] ?? {}, null, 2));
-  };
-
-  const openCreate = () => {
-    resetForm();
-    setEditItem(null);
-    setEditorOpen(true);
-  };
-
   const openEdit = (item: ConfigTemplate) => {
     setEditItem(item);
     setFormName(item.name);
@@ -205,13 +193,6 @@ export default function ConfigsPage() {
 
   return (
     <div className="space-y-4">
-      <div className="flex justify-end">
-        <Button onClick={openCreate}>
-          <Plus className="mr-2 h-4 w-4" />
-          {t('configs.create')}
-        </Button>
-      </div>
-
       {/* search bar */}
       <div className="relative max-w-sm">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />

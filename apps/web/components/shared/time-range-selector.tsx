@@ -245,6 +245,12 @@ export function getDefaultRange(days = 30): TimeRangeValue {
   return { from: formatDate(from), to: formatDate(to) };
 }
 
+export function getMonthToDateRange(): TimeRangeValue {
+  const to = today();
+  const from = startOfMonth(to);
+  return { from: formatDate(from), to: formatDate(to) };
+}
+
 export function rangeToIsoBounds(range: TimeRangeValue): { fromIso: string; toIso: string } {
   const fromDate = parseLocalDate(range.from);
   const toDate = parseLocalDate(range.to);
