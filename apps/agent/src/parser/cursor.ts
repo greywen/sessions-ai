@@ -12,7 +12,94 @@ import type {
   UnifiedMessage,
 } from './types.ts';
 import type { ParseResult, ToolParser } from './tool-parser.ts';
+import {
+  buildFileEditBlock,
+  diffFromOldNew,
+  type FileEditOperation,
+  type FileEditStatus,
+  type NormalizedFileEdit,
+} from './edit-normalizer.ts';
 import { logger } from '../logger.ts';
+
+/** Tool names Cursor uses for file mutations. */
+const CURSOR_EDIT_TOOLS = new Set([
+  'edit_file',
+  'search_replace',
+  'write',
+  'create_file',
+  'delete_file',
+  'apply_patch',
+  'multiedit',
+]);
+
+function asString(v: unknown): string | null {
+  return typeof v === 'string' && v.length > 0 ? v : null;
+}
+
+function mapCursorStatus(status: string | undefined): FileEditStatus {
+  const s = (status ?? '').toLowerCase();
+  if (s === 'completed' || s === 'success' || s === 'applied') return 'applied';
+  if (s === 'error' || s === 'failed' || s === 'rejected') return 'failed';
+  if (s === 'pending' || s === 'in_progress' || s === 'running') return 'proposed';
+  return 'unknown';
+}
+
+/**
+ * Build a NormalizedFileEdit from a Cursor toolFormerData entry. Returns null
+ * if the tool is not an edit tool or the input has no usable file path.
+ */
+function normaliseCursorEdit(
+  toolName: string,
+  input: Record<string, unknown> | null,
+  status: FileEditStatus,
+): NormalizedFileEdit | null {
+  const lower = toolName.toLowerCase();
+  if (!CURSOR_EDIT_TOOLS.has(lower)) return null;
+
+  const filePath =
+    asString(input?.target_file)
+    ?? asString(input?.file_path)
+    ?? asString(input?.filePath)
+    ?? asString(input?.path);
+  if (!filePath) return null;
+
+  let operation: FileEditOperation = 'update';
+  if (lower === 'delete_file') operation = 'delete';
+  else if (lower === 'create_file' || lower === 'write') operation = 'create';
+
+  const oldString = asString(input?.old_string);
+  const newString =
+    asString(input?.new_string)
+    ?? asString(input?.code_edit)
+    ?? asString(input?.content);
+
+  let diff: string | null = null;
+  let summary = `Edited ${filePath}`;
+  if (operation === 'delete') {
+    summary = `Deleted ${filePath}`;
+  } else if (operation === 'create') {
+    diff = diffFromOldNew(filePath, '', newString ?? '');
+    summary = `Created ${filePath}`;
+  } else {
+    // search_replace / edit_file
+    if (oldString !== null || newString !== null) {
+      diff = diffFromOldNew(filePath, oldString ?? '', newString ?? '');
+    }
+  }
+
+  return {
+    filePath,
+    diff,
+    summary,
+    oldString,
+    newString,
+    meta: {
+      operation,
+      status,
+      oldPath: null,
+    },
+  };
+}
 
 const CURSOR_NS = 'cursor-ns-v1';
 
@@ -192,14 +279,25 @@ export class CursorParser implements ToolParser {
           parsedInput = { raw: tool.params };
         }
       }
-      const result = typeof tool.result === 'string' ? tool.result : '';
-      const block: ContentBlock = {
-        ...emptyBlock('ToolCall'),
-        content: result.length > 4000 ? `${result.slice(0, 4000)}\n…[truncated]` : result || `Tool: ${tool.name}`,
-        toolName: tool.name,
-        toolInput: parsedInput,
-      };
-      blocks.push(block);
+      const status = mapCursorStatus(tool.status);
+      const editNormalized = normaliseCursorEdit(tool.name, parsedInput, status);
+      if (editNormalized) {
+        blocks.push(
+          buildFileEditBlock(editNormalized, {
+            toolName: tool.name,
+            toolInput: parsedInput,
+          }),
+        );
+      } else {
+        const result = typeof tool.result === 'string' ? tool.result : '';
+        const block: ContentBlock = {
+          ...emptyBlock('ToolCall'),
+          content: result.length > 4000 ? `${result.slice(0, 4000)}\n…[truncated]` : result || `Tool: ${tool.name}`,
+          toolName: tool.name,
+          toolInput: parsedInput,
+        };
+        blocks.push(block);
+      }
     }
 
     if (blocks.length === 0) return null;

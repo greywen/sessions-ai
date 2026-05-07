@@ -379,6 +379,8 @@ export default function SessionsPage() {
             <SelectItem value="Aider">Aider</SelectItem>
             <SelectItem value="GitHubCopilot">GitHub Copilot</SelectItem>
             <SelectItem value="Codex">Codex</SelectItem>
+            <SelectItem value="QwenCode">Qcoder</SelectItem>
+            <SelectItem value="CodeBuddy">CodeBuddy</SelectItem>
           </SelectContent>
         </Select>
         <Select value={userFilter} onValueChange={setUserFilter}>

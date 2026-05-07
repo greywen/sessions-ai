@@ -23,6 +23,7 @@ const TOOL_ICON_MAP = {
   Codex,
   QwenCode: Qwen,
   Qcoder: Qwen,
+  // CodeBuddy uses provider fallback (no @lobehub/icons entry)
 } as const;
 
 const TOOL_PROVIDER_MAP: Record<string, string> = {
@@ -35,6 +36,7 @@ const TOOL_PROVIDER_MAP: Record<string, string> = {
   Codex: 'openai',
   QwenCode: 'qwen',
   Qcoder: 'qwen',
+  CodeBuddy: 'tencent',
 };
 
 const TOOL_LABELS: Record<string, string> = {
@@ -47,6 +49,7 @@ const TOOL_LABELS: Record<string, string> = {
   Codex: 'Codex',
   QwenCode: 'Qcoder',
   Qcoder: 'Qcoder',
+  CodeBuddy: 'CodeBuddy',
 };
 
 export function getToolLabel(tool: string): string {

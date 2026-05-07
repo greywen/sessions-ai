@@ -100,7 +100,13 @@ describe('CursorParser - 解析 composer + bubbles', () => {
     expect(a.usage?.inputTokens).toBe(50);
     expect(a.contentBlocks.length).toBe(2);
     expect(a.contentBlocks[1].toolName).toBe('edit_file');
-    expect(a.contentBlocks[1].toolInput).toEqual({ path: 'a.ts' });
+    expect(a.contentBlocks[1].blockType).toBe('FileEdit');
+    expect(a.contentBlocks[1].filePath).toBe('a.ts');
+    expect(a.contentBlocks[1].toolInput).toMatchObject({ path: 'a.ts' });
+    expect((a.contentBlocks[1].toolInput as Record<string, unknown>).editMeta).toMatchObject({
+      operation: 'update',
+      status: 'applied',
+    });
 
     expect(r.newOffset).toBe(TS_ASSI);
   });
@@ -178,5 +184,120 @@ describe('CursorParser - 解析 composer + bubbles', () => {
     expect(r.messages[0].usage).not.toBeNull();
     expect(r.messages[0].usage?.inputTokens).toBe(0);
     expect(r.messages[0].usage?.outputTokens).toBe(0);
+  });
+});
+
+describe('CursorParser - FileEdit normalization', () => {
+  test('search_replace -> FileEdit with diff & applied status', async () => {
+    const file = buildDb([
+      { key: `composerData:${COMPOSER_ID}`, value: { composerId: COMPOSER_ID } },
+      {
+        key: `bubbleId:${COMPOSER_ID}:${BUBBLE_ASSI}`,
+        value: {
+          bubbleId: BUBBLE_ASSI,
+          type: 2,
+          createdAt: TS_ASSI,
+          toolFormerData: {
+            name: 'search_replace',
+            params: JSON.stringify({
+              file_path: 'src/foo.ts',
+              old_string: 'const a = 1;',
+              new_string: 'const a = 2;',
+            }),
+            result: 'ok',
+            status: 'completed',
+          },
+        },
+      },
+    ]);
+    const p = new CursorParser('m1');
+    const r = await p.parseIncremental(file, 0);
+    expect(r.messages.length).toBe(1);
+    const blocks = r.messages[0].contentBlocks;
+    const edit = blocks.find((b) => b.blockType === 'FileEdit');
+    expect(edit).toBeDefined();
+    expect(edit?.filePath).toBe('src/foo.ts');
+    expect(edit?.diff).toContain('-const a = 1;');
+    expect(edit?.diff).toContain('+const a = 2;');
+    expect((edit?.toolInput as Record<string, unknown>).editMeta).toMatchObject({
+      operation: 'update',
+      status: 'applied',
+    });
+  });
+
+  test('write -> FileEdit create with full content diff', async () => {
+    const file = buildDb([
+      { key: `composerData:${COMPOSER_ID}`, value: { composerId: COMPOSER_ID } },
+      {
+        key: `bubbleId:${COMPOSER_ID}:${BUBBLE_ASSI}`,
+        value: {
+          bubbleId: BUBBLE_ASSI,
+          type: 2,
+          createdAt: TS_ASSI,
+          toolFormerData: {
+            name: 'write',
+            params: JSON.stringify({ file_path: 'NEW.md', content: '# Hello\n' }),
+            status: 'completed',
+          },
+        },
+      },
+    ]);
+    const p = new CursorParser('m1');
+    const r = await p.parseIncremental(file, 0);
+    const edit = r.messages[0].contentBlocks.find((b) => b.blockType === 'FileEdit');
+    expect(edit?.filePath).toBe('NEW.md');
+    expect(edit?.diff).toContain('+# Hello');
+    expect((edit?.toolInput as Record<string, unknown>).editMeta).toMatchObject({
+      operation: 'create',
+      status: 'applied',
+    });
+  });
+
+  test('delete_file -> FileEdit delete with no diff', async () => {
+    const file = buildDb([
+      { key: `composerData:${COMPOSER_ID}`, value: { composerId: COMPOSER_ID } },
+      {
+        key: `bubbleId:${COMPOSER_ID}:${BUBBLE_ASSI}`,
+        value: {
+          bubbleId: BUBBLE_ASSI,
+          type: 2,
+          createdAt: TS_ASSI,
+          toolFormerData: {
+            name: 'delete_file',
+            params: JSON.stringify({ target_file: 'old.txt' }),
+            status: 'error',
+          },
+        },
+      },
+    ]);
+    const p = new CursorParser('m1');
+    const r = await p.parseIncremental(file, 0);
+    const edit = r.messages[0].contentBlocks.find((b) => b.blockType === 'FileEdit');
+    expect(edit?.filePath).toBe('old.txt');
+    expect(edit?.diff).toBeNull();
+    expect((edit?.toolInput as Record<string, unknown>).editMeta).toMatchObject({
+      operation: 'delete',
+      status: 'failed',
+    });
+  });
+
+  test('non-edit tool stays as ToolCall', async () => {
+    const file = buildDb([
+      { key: `composerData:${COMPOSER_ID}`, value: { composerId: COMPOSER_ID } },
+      {
+        key: `bubbleId:${COMPOSER_ID}:${BUBBLE_ASSI}`,
+        value: {
+          bubbleId: BUBBLE_ASSI,
+          type: 2,
+          createdAt: TS_ASSI,
+          toolFormerData: { name: 'grep', params: '{"q":"foo"}', result: 'matches', status: 'completed' },
+        },
+      },
+    ]);
+    const p = new CursorParser('m1');
+    const r = await p.parseIncremental(file, 0);
+    const block = r.messages[0].contentBlocks[0];
+    expect(block.blockType).toBe('ToolCall');
+    expect(block.toolName).toBe('grep');
   });
 });
