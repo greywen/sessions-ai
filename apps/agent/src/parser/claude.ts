@@ -477,12 +477,18 @@ export class ClaudeCodeParser implements ToolParser {
     const toolUseIndex = new Map<string, ToolUseIndexEntry>();
     const messages: UnifiedMessage[] = [];
 
+    // Last byte of the last complete (newline-terminated) line. The streaming
+    // VS Code writer can leave a partial trailing line; advancing past it
+    // would permanently skip that record once the rest is flushed.
+    let lastCompleteEnd = -1;
+
     let lineStart = 0;
     let lineNo = 0;
 
     for (let i = 0; i <= raw.length; i++) {
       const isLineEnd = i === raw.length || raw[i] === 10; // '\n'
       if (!isLineEnd) continue;
+      if (i < raw.length) lastCompleteEnd = i;
 
       let lineEnd = i;
       if (lineEnd > lineStart && raw[lineEnd - 1] === 13) lineEnd -= 1; // trim '\r'
@@ -574,6 +580,9 @@ export class ClaudeCodeParser implements ToolParser {
     }
 
     messages.sort((a, b) => a.timestamp.localeCompare(b.timestamp));
-    return { messages, newOffset: st.size };
+    // Advance only past the last complete line. Partial trailing bytes (mid-stream
+    // writes from claude-vscode) stay un-consumed and will be re-read next tick.
+    const newOffset = lastCompleteEnd >= 0 ? lastCompleteEnd + 1 : startOffset;
+    return { messages, newOffset };
   }
 }

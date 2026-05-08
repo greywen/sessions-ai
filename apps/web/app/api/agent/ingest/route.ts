@@ -2,13 +2,11 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { sql } from 'drizzle-orm';
 import { db } from '@/lib/db';
-import { normalizedMessages, rawEvents } from '@/lib/db/schema';
+import { normalizedMessages } from '@/lib/db/schema';
 import { authenticateAgent, isAgentContext } from '@/lib/auth/agent-auth';
 import { logger } from '@/lib/logger';
-import { createHash } from 'crypto';
 import { computeCostFor, loadPricingForBatch, type UsageJson } from '@/lib/cost/compute';
 
-// MESSAGE payload schema
 const contentBlockSchema = z.object({
   blockType: z.string(),
   content: z.string(),
@@ -44,72 +42,51 @@ const messageSchema = z.object({
 
 const ingestPayloadSchema = z.array(messageSchema).min(1).max(200);
 
-// POST /api/agent/ingest — Batch Data Acquisition
+// POST /api/agent/ingest
 export async function POST(request: Request) {
   const startTime = Date.now();
 
   try {
-    // 1. Agent Authentication
     const authResult = await authenticateAgent(request);
     if (!isAgentContext(authResult)) {
-      return authResult; // Return error response
+      return authResult;
     }
     const { machine } = authResult;
 
-    // 2. Unzip body(reqwest May be used when sending gzip)
     let bodyText: string;
     const contentEncoding = request.headers.get('content-encoding');
     if (contentEncoding === 'gzip') {
       const buffer = await request.arrayBuffer();
-      // Inside Node.js Used in the environment zlib Unzip
       const { gunzipSync } = await import('zlib');
       bodyText = gunzipSync(Buffer.from(buffer)).toString('utf-8');
     } else {
       bodyText = await request.text();
     }
 
-    // 3. Parse and Verify payload
     let messages;
     try {
       const parsed = JSON.parse(bodyText);
       messages = ingestPayloadSchema.parse(parsed);
     } catch (error) {
       if (error instanceof z.ZodError) {
-        // Log only the issue paths/codes — `error.issues` includes the
-        // received values (full message bodies) which are huge during sync.
         const issueSummary = error.issues
           .slice(0, 5)
           .map((i) => `${i.path.join('.')}: ${i.code}`);
         logger.warn(
           { machineId: machine.id, issueCount: error.issues.length, issues: issueSummary },
-          'Ingest payload Verification failed',
+          'Ingest payload validation failed',
         );
-        return NextResponse.json(
-          { error: 'Payload Invalid format' },
-          { status: 400 },
-        );
+        return NextResponse.json({ error: 'Payload invalid format' }, { status: 400 });
       }
-      logger.warn({ machineId: machine.id }, 'Ingest payload JSON Parse Failure');
-      return NextResponse.json({ error: 'JSON Parse Failure' }, { status: 400 });
+      logger.warn({ machineId: machine.id }, 'Ingest payload JSON parse failure');
+      return NextResponse.json({ error: 'JSON parse failure' }, { status: 400 });
     }
 
     logger.debug(
-      {
-        machineId: machine.id,
-        messageCount: messages.length,
-        bodySize: bodyText.length,
-      },
-      'Ingest Received batch escalation',
+      { machineId: machine.id, messageCount: messages.length, bodySize: bodyText.length },
+      'Ingest received batch',
     );
 
-    // 4. Bulk insert normalized_messages.
-    // The same message id may be reported multiple times due to CRDT streaming
-    // completion; use ON CONFLICT for idempotent updates.
-    //
-    // Pricing materialization: for each batch we load all pricing rows that
-    // could possibly match any of the batch's models in one query, then
-    // compute `cost_usd` + `pricing_id` per message in TS (see
-    // lib/cost/compute.ts). Reads no longer need to JOIN pricing_table.
     let accepted = 0;
     const batchSize = 50;
     for (let i = 0; i < messages.length; i += batchSize) {
@@ -162,73 +139,30 @@ export async function POST(request: Request) {
           });
         accepted += batch.length;
       } catch (dbError) {
-        // Drizzle/pg errors stringify the full SQL + parameter values, which
-        // includes every message's content_blocks JSON. Only keep the message.
+        // Batch failed — log and skip; do not fall back to per-row inserts.
+        // Per-row fallback previously caused O(N) sequential round-trips during
+        // first-sync bursts and could stall the process for minutes.
         logger.warn(
-          { machineId: machine.id, batchIndex: i, batchSize: batch.length, err: (dbError as Error)?.message ?? String(dbError) },
-          'Ingest 批量写入失败,回退到逐条',
+          {
+            machineId: machine.id,
+            batchIndex: i,
+            batchSize: batch.length,
+            err: (dbError as Error)?.message ?? String(dbError),
+          },
+          'Ingest batch write failed, skipping batch',
         );
-        for (const value of values) {
-          try {
-            await db
-              .insert(normalizedMessages)
-              .values(value)
-              .onConflictDoUpdate({
-                target: normalizedMessages.id,
-                set: {
-                  sessionId: sql`excluded.session_id`,
-                  parentId: sql`excluded.parent_id`,
-                  sourceTool: sql`excluded.source_tool`,
-                  role: sql`excluded.role`,
-                  contentBlocks: sql`excluded.content_blocks`,
-                  usage: sql`excluded.usage`,
-                  costUsd: sql`excluded.cost_usd`,
-                  pricingId: sql`excluded.pricing_id`,
-                  rawTimestamp: sql`excluded.raw_timestamp`,
-                  metadata: sql`excluded.metadata`,
-                },
-              });
-            accepted += 1;
-          } catch {
-            // Skip individual failed rows.
-          }
-        }
       }
-    }
-
-    // 5. Simultaneous writes raw_events(Raw Data Backup)
-    const contentHash = createHash('sha256').update(bodyText).digest('hex');
-    const sourceTool = messages[0]?.sourceTool ?? 'unknown';
-    try {
-      await db
-        .insert(rawEvents)
-        .values({
-          machineId: machine.id,
-          sourceTool,
-          sourceFilePath: `ingest/${new Date().toISOString().split('T')[0]}`,
-          rawContent: Buffer.from(bodyText).toString('base64'),
-          contentHash,
-        })
-        .onConflictDoNothing();
-    } catch (rawError) {
-      // raw_events Write failure does not affect the mainstream
-      logger.warn({ machineId: machine.id, err: (rawError as Error)?.message ?? String(rawError) }, 'raw_events failure on writing');
     }
 
     const duration = Date.now() - startTime;
     logger.info(
-      {
-        machineId: machine.id,
-        messageCount: messages.length,
-        accepted,
-        durationMs: duration,
-      },
-      'Ingest Batch Escalation Complete',
+      { machineId: machine.id, messageCount: messages.length, accepted, durationMs: duration },
+      'Ingest batch complete',
     );
 
     return NextResponse.json({ accepted });
   } catch (error) {
-    logger.error({ err: (error as Error)?.message ?? String(error) }, 'Ingest Handling Exceptions');
+    logger.error({ err: (error as Error)?.message ?? String(error) }, 'Ingest handler exception');
     return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
   }
 }

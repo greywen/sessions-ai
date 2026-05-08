@@ -108,7 +108,9 @@ export default function SessionsPage() {
   const paginationRef = React.useRef(pagination);
   const listScrollRef = React.useRef<HTMLDivElement>(null);
   const loadMoreRef = React.useRef<HTMLDivElement>(null);
+  // LRU cache capped at 10 entries to prevent unbounded memory growth
   const detailCacheRef = React.useRef<Map<string, { meta: SessionMeta; messages: SessionMessageItem[] }>>(new Map());
+  const detailCacheOrderRef = React.useRef<string[]>([]);
   const detailAbortRef = React.useRef<AbortController | null>(null);
 
   const fetchSessions = React.useCallback(async (page = 1, append = false) => {
@@ -217,7 +219,17 @@ export default function SessionsPage() {
         if (cancelled) return;
         setSelectedMeta(metaJson.data);
         setDetailMessages(msgJson.data ?? []);
-        detailCacheRef.current.set(selectedSessionId, {
+        // LRU eviction: keep at most 10 cached sessions
+        const cache = detailCacheRef.current;
+        const order = detailCacheOrderRef.current;
+        if (!cache.has(selectedSessionId)) {
+          if (order.length >= 10) {
+            const evict = order.shift()!;
+            cache.delete(evict);
+          }
+          order.push(selectedSessionId);
+        }
+        cache.set(selectedSessionId, {
           meta: metaJson.data,
           messages: msgJson.data ?? [],
         });

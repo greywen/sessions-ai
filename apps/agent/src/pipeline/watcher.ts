@@ -22,12 +22,13 @@ export type EventHandler = (ev: FileChangeEvent) => void | Promise<void>;
 /**
  * File watcher wrapper based on chokidar.
  * - Missing directories are logged as warnings.
- * - Uses chokidar awaitWriteFinish to reduce partial-write reads.
+ * - Watcher fires on raw fs events; partial-write tolerance lives in the
+ *   per-parser incremental readers, not in chokidar's awaitWriteFinish.
  */
 export class FileWatcher {
   private watcher: FSWatcher | null = null;
 
-  constructor(private readonly paths: WatchPath[], private readonly debounceMs = 200) {}
+  constructor(private readonly paths: WatchPath[]) {}
 
   start(handler: EventHandler): void {
     const validPaths = this.paths.filter((p) => {
@@ -83,15 +84,17 @@ export class FileWatcher {
       return !matchExt(testPath);
     };
 
+    // awaitWriteFinish is intentionally OFF.
+    // Why: Claude Code's VS Code extension streams assistant output token-by-token
+    // into the same .jsonl, so the file is never "stable" mid-response and a
+    // stability-window debounce delays sync until the turn ends. Parsers here
+    // are byte-offset incremental and tolerate partial trailing lines, so
+    // raw change events are safe and far more timely.
     this.watcher = chokidar.watch(targets, {
       ignoreInitial: true,
       persistent: true,
       ignored: ignoreFn,
       ignorePermissionErrors: true,
-      awaitWriteFinish: {
-        stabilityThreshold: this.debounceMs,
-        pollInterval: 50,
-      },
     });
 
     this.watcher.on('error', (err) => {
