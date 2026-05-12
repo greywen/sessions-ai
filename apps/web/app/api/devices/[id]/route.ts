@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { db } from '@/lib/db';
-import { machines, users, normalizedMessages, auditLogs } from '@/lib/db/schema';
+import { machines, normalizedMessages, auditLogs } from '@/lib/db/schema';
 import { getSession } from '@/lib/auth/session';
 import { hasRole } from '@/lib/auth/roles';
 import { logger } from '@/lib/logger';
@@ -22,13 +22,9 @@ function usageTokenAsNumeric(field: 'inputTokens' | 'outputTokens' | 'cacheCreat
 
 // PATCH Request schema
 const patchSchema = z.object({
-  action: z.enum(['approve', 'disable', 'enable', 'assign_owner', 'update_name']),
-  ownerId: z.string().uuid().optional(),
+  action: z.enum(['approve', 'disable', 'enable', 'update_name']),
   displayName: z.string().min(1).max(255).optional(),
 }).refine((data) => {
-  if (data.action === 'assign_owner' && !data.ownerId) {
-    return false;
-  }
   if (data.action === 'update_name' && !data.displayName) {
     return false;
   }
@@ -40,7 +36,6 @@ const VALID_TRANSITIONS: Record<string, string[]> = {
   approve: ['pending'],        // pending → active
   disable: ['active'],         // active → disabled
   enable: ['disabled'],        // disabled → active
-  assign_owner: ['pending', 'active', 'disabled'], // Any status
   update_name: ['pending', 'active', 'disabled'],  // Any status
 };
 
@@ -68,9 +63,6 @@ export async function GET(
         osUsername: machines.osUsername,
         displayName: machines.displayName,
         osInfo: machines.osInfo,
-        ownerId: machines.ownerId,
-        ownerName: users.name,
-        ownerEmail: users.email,
         authKey: machines.authKey,
         status: machines.status,
         agentVersion: machines.agentVersion,
@@ -79,7 +71,6 @@ export async function GET(
         updatedAt: machines.updatedAt,
       })
       .from(machines)
-      .leftJoin(users, eq(machines.ownerId, users.id))
       .where(eq(machines.id, id))
       .limit(1);
 
@@ -217,10 +208,6 @@ export async function PATCH(
         newStatus = 'active';
         updateData.status = 'active';
         auditDetails = { oldStatus: device.status, newStatus: 'active' };
-        break;
-      case 'assign_owner':
-        updateData.ownerId = data.ownerId!;
-        auditDetails = { oldOwnerId: device.ownerId, newOwnerId: data.ownerId };
         break;
       case 'update_name':
         updateData.displayName = data.displayName!;

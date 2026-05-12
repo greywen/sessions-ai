@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { db } from '@/lib/db';
-import { normalizedMessages, messageFavorites } from '@/lib/db/schema';
+import { normalizedMessages, favoriteSnapshots } from '@/lib/db/schema';
 import { getSession } from '@/lib/auth/session';
 import { logger } from '@/lib/logger';
 import { and, eq } from 'drizzle-orm';
@@ -13,9 +13,17 @@ const paramsSchema = z.object({
 
 const patchSchema = z.object({
   favorite: z.boolean(),
+  // Optional user note attached at favorite-time. Only persisted when
+  // favorite=true.
+  note: z.string().max(2000).optional(),
 });
 
-// PATCH /api/sessions/[id]/messages/[messageId]/favorite — Set favorite status for one message
+// PATCH /api/sessions/[id]/messages/[messageId]/favorite
+//
+// favorite=true  → take a deep snapshot of the message and write it to
+//                  `favorite_snapshots`. The snapshot survives parser
+//                  rewrites and even deletion of the source row.
+// favorite=false → delete the snapshot for (user, source_message_id).
 export async function PATCH(
   request: Request,
   { params }: { params: Promise<{ id: string; messageId: string }> },
@@ -30,8 +38,33 @@ export async function PATCH(
     const body = await request.json();
     const data = patchSchema.parse(body);
 
-    const [existingMessage] = await db
-      .select({ id: normalizedMessages.id })
+    if (!data.favorite) {
+      await db
+        .delete(favoriteSnapshots)
+        .where(
+          and(
+            eq(favoriteSnapshots.userId, session.userId),
+            eq(favoriteSnapshots.sourceMessageId, resolvedParams.messageId),
+          ),
+        );
+      return NextResponse.json({
+        data: { messageId: resolvedParams.messageId, isFavorite: false },
+      });
+    }
+
+    // Pull the full message row so we can freeze a complete copy.
+    const [src] = await db
+      .select({
+        id: normalizedMessages.id,
+        sessionId: normalizedMessages.sessionId,
+        sourceTool: normalizedMessages.sourceTool,
+        machineId: normalizedMessages.machineId,
+        role: normalizedMessages.role,
+        contentBlocks: normalizedMessages.contentBlocks,
+        usage: normalizedMessages.usage,
+        metadata: normalizedMessages.metadata,
+        rawTimestamp: normalizedMessages.rawTimestamp,
+      })
       .from(normalizedMessages)
       .where(
         and(
@@ -41,36 +74,41 @@ export async function PATCH(
       )
       .limit(1);
 
-    if (!existingMessage) {
+    if (!src) {
       return NextResponse.json({ error: 'Message does not exist' }, { status: 404 });
     }
 
-    if (data.favorite) {
-      await db
-        .insert(messageFavorites)
-        .values({
-          userId: session.userId,
-          messageId: resolvedParams.messageId,
-        })
-        .onConflictDoNothing({
-          target: [messageFavorites.userId, messageFavorites.messageId],
-        });
-    } else {
-      await db
-        .delete(messageFavorites)
-        .where(
-          and(
-            eq(messageFavorites.userId, session.userId),
-            eq(messageFavorites.messageId, resolvedParams.messageId),
-          ),
-        );
-    }
+    await db
+      .insert(favoriteSnapshots)
+      .values({
+        userId: session.userId,
+        sourceMessageId: src.id,
+        sourceSessionId: src.sessionId,
+        sourceTool: src.sourceTool,
+        machineId: src.machineId,
+        role: src.role,
+        contentBlocks: src.contentBlocks ?? [],
+        usage: src.usage ?? null,
+        metadata: src.metadata ?? null,
+        rawTimestamp: src.rawTimestamp,
+        userNote: data.note ?? null,
+      })
+      .onConflictDoUpdate({
+        target: [favoriteSnapshots.userId, favoriteSnapshots.sourceMessageId],
+        // Re-favoriting refreshes the snapshot to the current state of the
+        // source message and updates the optional note when supplied.
+        set: {
+          contentBlocks: src.contentBlocks ?? [],
+          usage: src.usage ?? null,
+          metadata: src.metadata ?? null,
+          rawTimestamp: src.rawTimestamp,
+          userNote: data.note ?? null,
+          snapshottedAt: new Date(),
+        },
+      });
 
     return NextResponse.json({
-      data: {
-        messageId: resolvedParams.messageId,
-        isFavorite: data.favorite,
-      },
+      data: { messageId: resolvedParams.messageId, isFavorite: true },
     });
   } catch (error) {
     if (error instanceof z.ZodError) {

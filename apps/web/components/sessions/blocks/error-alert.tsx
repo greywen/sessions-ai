@@ -16,7 +16,7 @@ export function ErrorAlert({ message }: ErrorAlertProps) {
     <Alert variant="destructive" className="my-1">
       <AlertCircle className="h-4 w-4" />
       <AlertTitle>{t('block.error')}</AlertTitle>
-      <AlertDescription className="whitespace-pre-wrap text-sm">
+      <AlertDescription className="whitespace-pre-wrap break-words [overflow-wrap:anywhere] text-sm">
         {message}
       </AlertDescription>
     </Alert>

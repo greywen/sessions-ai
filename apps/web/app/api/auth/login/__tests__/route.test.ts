@@ -1,49 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const mockFindFirst = vi.fn();
-const mockInsert = vi.fn();
-const mockValues = vi.fn();
-const mockOnConflictDoUpdate = vi.fn();
-const mockVerifyPassword = vi.fn();
-const mockHashPassword = vi.fn();
+const mockEnsureFixedAccount = vi.fn();
+const mockGetFixedAccountConfig = vi.fn();
 const mockCreateSession = vi.fn();
-const mockEq = vi.fn();
 
-vi.mock('@/lib/db', () => ({
-  db: {
-    query: {
-      users: {
-        findFirst: (...args: unknown[]) => mockFindFirst(...args),
-      },
-    },
-    insert: (...args: unknown[]) => {
-      mockInsert(...args);
-      return {
-        values: (...valueArgs: unknown[]) => {
-          mockValues(...valueArgs);
-          return {
-            onConflictDoUpdate: (...conflictArgs: unknown[]) => mockOnConflictDoUpdate(...conflictArgs),
-          };
-        },
-      };
-    },
-  },
-}));
-
-vi.mock('@/lib/db/schema', () => ({
-  users: {
-    id: 'id',
-    email: 'email',
-    role: 'role',
-    name: 'name',
-    passwordHash: 'password_hash',
-    updatedAt: 'updated_at',
-  },
-}));
-
-vi.mock('@/lib/auth/password', () => ({
-  verifyPassword: (...args: unknown[]) => mockVerifyPassword(...args),
-  hashPassword: (...args: unknown[]) => mockHashPassword(...args),
+vi.mock('@/lib/auth/fixed-account', () => ({
+  ensureFixedAccount: (...args: unknown[]) => mockEnsureFixedAccount(...args),
+  getFixedAccountConfig: (...args: unknown[]) => mockGetFixedAccountConfig(...args),
 }));
 
 vi.mock('@/lib/auth/session', () => ({
@@ -59,32 +22,25 @@ vi.mock('@/lib/logger', () => ({
   },
 }));
 
-vi.mock('drizzle-orm', () => ({
-  eq: (...args: unknown[]) => mockEq(...args),
-}));
-
 describe('POST /api/auth/login', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.resetModules();
-    delete process.env.ADMIN_EMAIL;
-
-    mockEq.mockImplementation((_column: unknown, value: unknown) => ({ value }));
-    mockHashPassword.mockReturnValue('hashed-default-password');
-    mockOnConflictDoUpdate.mockResolvedValue(undefined);
-    mockCreateSession.mockResolvedValue(undefined);
-  });
-
-  it('upserts fixed default account and logs in with username sessions-ai', async () => {
-    mockFindFirst.mockResolvedValue({
+    mockGetFixedAccountConfig.mockReturnValue({
+      account: 'sessions-ai',
+      password: '123456',
+      name: 'sessions-ai',
+    });
+    mockEnsureFixedAccount.mockResolvedValue({
       id: 'u-1',
       email: 'sessions-ai',
       role: 'super_admin',
       name: 'sessions-ai',
-      passwordHash: 'stored-hash',
     });
-    mockVerifyPassword.mockReturnValue(true);
+    mockCreateSession.mockResolvedValue(undefined);
+  });
 
+  it('logs in successfully when fixed credentials match', async () => {
     const { POST } = await import('@/app/api/auth/login/route');
     const request = new Request('http://localhost/api/auth/login', {
       method: 'POST',
@@ -97,13 +53,7 @@ describe('POST /api/auth/login', () => {
 
     expect(response.status).toBe(200);
     expect(data.user.email).toBe('sessions-ai');
-    expect(mockValues).toHaveBeenCalledWith({
-      email: 'sessions-ai',
-      name: 'sessions-ai',
-      role: 'super_admin',
-      passwordHash: 'hashed-default-password',
-    });
-    expect(mockOnConflictDoUpdate).toHaveBeenCalledTimes(1);
+    expect(mockEnsureFixedAccount).toHaveBeenCalledTimes(1);
     expect(mockCreateSession).toHaveBeenCalledWith({
       userId: 'u-1',
       email: 'sessions-ai',
@@ -111,43 +61,20 @@ describe('POST /api/auth/login', () => {
     });
   });
 
-  it('tries alias when first account exists but password does not match', async () => {
-    mockFindFirst
-      .mockResolvedValueOnce({
-        id: 'u-old',
-        email: 'sessions-ai',
-        role: 'viewer',
-        name: 'legacy',
-        passwordHash: 'legacy-hash',
-      })
-      .mockResolvedValueOnce({
-        id: 'u-new',
-        email: 'sessions-ai@sessions-ai.local',
-        role: 'super_admin',
-        name: 'sessions-ai',
-        passwordHash: 'new-hash',
-      });
-
-    mockVerifyPassword
-      .mockReturnValueOnce(false)
-      .mockReturnValueOnce(true);
-
+  it('rejects login when password mismatches fixed credentials', async () => {
     const { POST } = await import('@/app/api/auth/login/route');
     const request = new Request('http://localhost/api/auth/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ account: 'sessions-ai@sessions-ai.local', password: '123456' }),
+      body: JSON.stringify({ account: 'sessions-ai', password: 'wrong' }),
     });
 
     const response = await POST(request);
-    const data = await response.json();
+    const data = await response.json() as { error: string };
 
-    expect(response.status).toBe(200);
-    expect(data.user.email).toBe('sessions-ai@sessions-ai.local');
-    expect(mockCreateSession).toHaveBeenCalledWith({
-      userId: 'u-new',
-      email: 'sessions-ai@sessions-ai.local',
-      role: 'super_admin',
-    });
+    expect(response.status).toBe(401);
+    expect(data.error).toBe('Account or password is incorrect');
+    expect(mockEnsureFixedAccount).not.toHaveBeenCalled();
+    expect(mockCreateSession).not.toHaveBeenCalled();
   });
 });

@@ -3,7 +3,7 @@
 import React from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
-import { ArrowLeft, Monitor, User, Clock, Shield, Ban, CheckCircle, Save, Loader2, Plus, Copy, History, Search, RefreshCw, X } from 'lucide-react';
+import { ArrowLeft, Monitor, Clock, Shield, Ban, CheckCircle, Save, Loader2, Plus, Copy, History, Search, RefreshCw, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -19,7 +19,6 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from '@/components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { formatDistanceToNow, format } from 'date-fns';
@@ -34,9 +33,6 @@ interface DeviceDetail {
   osUsername: string | null;
   displayName: string | null;
   osInfo: { os?: string; version?: string; arch?: string; hostname?: string } | null;
-  ownerId: string | null;
-  ownerName: string | null;
-  ownerEmail: string | null;
   authKey: string;
   status: string;
   agentVersion: string | null;
@@ -56,12 +52,6 @@ interface DeviceDetail {
     monthCostUsd: string;
     totalTokens: number;
   };
-}
-
-interface UserItem {
-  id: string;
-  email: string;
-  name: string | null;
 }
 
 // ==================== Configuration management related types and constants ====================
@@ -168,9 +158,6 @@ export default function DeviceDetailPage({ params }: { params: Promise<{ id: str
   const { t, locale } = useI18n();
   const [device, setDevice] = React.useState<DeviceDetail | null>(null);
   const [loading, setLoading] = React.useState(true);
-  const [users, setUsers] = React.useState<UserItem[]>([]);
-  const [assignDialogOpen, setAssignDialogOpen] = React.useState(false);
-  const [selectedUserId, setSelectedUserId] = React.useState<string>('');
   const resolvedParams = React.use(params);
 
   // Configuration Management Status
@@ -210,16 +197,6 @@ export default function DeviceDetailPage({ params }: { params: Promise<{ id: str
       setLoading(false);
     }
   }, [resolvedParams.id, t]);
-
-  const fetchUsers = React.useCallback(async () => {
-    try {
-      const res = await fetch('/api/users');
-      if (res.ok) {
-        const json = await res.json();
-        setUsers(json.data);
-      }
-    } catch { /* Non-critical,Neglect */ }
-  }, []);
 
   // Get the current configuration of the device
   const fetchDeviceConfigs = React.useCallback(async () => {
@@ -508,10 +485,9 @@ export default function DeviceDetailPage({ params }: { params: Promise<{ id: str
 
   React.useEffect(() => {
     fetchDevice();
-    fetchUsers();
     fetchDeviceConfigs();
     fetchTemplates();
-  }, [fetchDevice, fetchUsers, fetchDeviceConfigs, fetchTemplates]);
+  }, [fetchDevice, fetchDeviceConfigs, fetchTemplates]);
 
   const handleAction = async (action: string) => {
     try {
@@ -528,25 +504,6 @@ export default function DeviceDetailPage({ params }: { params: Promise<{ id: str
       toast.success(t('devices.detail.toast.actionSucceeded'));
       fetchDevice();
     } catch { toast.error(t('common.operationFailed')); }
-  };
-
-  const handleAssignUser = async () => {
-    if (!selectedUserId) return;
-    try {
-      const res = await fetch(`/api/devices/${resolvedParams.id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'assign_owner', ownerId: selectedUserId }),
-      });
-      if (!res.ok) {
-        const err = await res.json();
-        toast.error(err.error || t('devices.detail.toast.assignFailed'));
-        return;
-      }
-      toast.success(t('devices.detail.toast.assigned'));
-      setAssignDialogOpen(false);
-      fetchDevice();
-    } catch { toast.error(t('devices.detail.toast.assignFailed')); }
   };
 
   const isOnline = (lastSeenAt: string | null) => {
@@ -882,47 +839,8 @@ export default function DeviceDetailPage({ params }: { params: Promise<{ id: str
           </CardContent>
         </Card>
 
-        {/* Belonging users + Statistics */}
+        {/* Statistics */}
         <div className="space-y-6">
-          <Card>
-            <CardHeader><CardTitle className="flex items-center gap-2"><User className="h-4 w-4" />{t('devices.detail.owner.title')}</CardTitle></CardHeader>
-            <CardContent>
-              {device.ownerName || device.ownerEmail ? (
-                <div className="space-y-1">
-                  <p className="font-medium">{device.ownerName ?? '--'}</p>
-                  <p className="text-sm text-muted-foreground">{device.ownerEmail ?? '--'}</p>
-                </div>
-              ) : (
-                <p className="text-sm text-muted-foreground">{t('devices.detail.owner.unassigned')}</p>
-              )}
-              <Dialog open={assignDialogOpen} onOpenChange={setAssignDialogOpen}>
-                <DialogTrigger asChild>
-                  <Button variant="outline" size="sm" className="mt-3 w-full">
-                    {device.ownerId ? t('devices.detail.owner.change') : t('devices.detail.owner.assign')}
-                  </Button>
-                </DialogTrigger>
-                <DialogContent>
-                  <DialogHeader>
-                    <DialogTitle>{t('devices.detail.owner.dialog.title')}</DialogTitle>
-                    <DialogDescription>{t('devices.detail.owner.dialog.desc')}</DialogDescription>
-                  </DialogHeader>
-                  <Select value={selectedUserId} onValueChange={setSelectedUserId}>
-                    <SelectTrigger><SelectValue placeholder={t('devices.detail.owner.dialog.placeholder')} /></SelectTrigger>
-                    <SelectContent>
-                      {users.map((u) => (
-                        <SelectItem key={u.id} value={u.id}>{u.name || u.email}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <DialogFooter>
-                    <Button variant="outline" onClick={() => setAssignDialogOpen(false)}>{t('common.cancel')}</Button>
-                    <Button onClick={handleAssignUser} disabled={!selectedUserId}>{t('devices.detail.owner.dialog.confirm')}</Button>
-                  </DialogFooter>
-                </DialogContent>
-              </Dialog>
-            </CardContent>
-          </Card>
-
           <Card>
             <CardHeader><CardTitle className="flex items-center gap-2"><Shield className="h-4 w-4" />{t('devices.detail.stats.title')}</CardTitle></CardHeader>
             <CardContent>

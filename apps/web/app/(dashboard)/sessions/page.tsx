@@ -28,8 +28,6 @@ interface SessionItem {
   firstMessageAt: string;
   lastMessageAt: string;
   deviceName: string | null;
-  ownerName: string | null;
-  ownerEmail: string | null;
   firstUserMessage: string | null;
   sessionTitle: string | null;
   isFavorite: boolean;
@@ -45,8 +43,6 @@ interface SessionMeta {
   firstMessageAt: string;
   lastMessageAt: string;
   deviceName: string | null;
-  ownerName: string | null;
-  ownerEmail: string | null;
   totalInputTokens: number;
   totalOutputTokens: number;
   totalCacheTokens: number;
@@ -75,14 +71,10 @@ interface SessionMessagesResponse {
   data: SessionMessageItem[];
 }
 
-interface UserItem {
-  id: string;
-  name: string | null;
-  email: string;
-}
-
 function formatNumber(n: number): string {
-  return Number.isFinite(n) ? n.toLocaleString() : '0';
+  if (!Number.isFinite(n)) return '0';
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
+  return String(n);
 }
 
 export default function SessionsPage() {
@@ -96,12 +88,10 @@ export default function SessionsPage() {
   const [loadingMore, setLoadingMore] = React.useState(false);
   const [pagination, setPagination] = React.useState({ page: 1, limit: 20, total: 0, totalPages: 0 });
   const [toolFilter, setToolFilter] = React.useState<string>('all');
-  const [userFilter, setUserFilter] = React.useState<string>('all');
   const [favoriteFilter, setFavoriteFilter] = React.useState<'all' | 'favorited' | 'unfavorited'>('all');
   const [timeRange, setTimeRange] = React.useState<TimeRangeValue>(() => getMonthToDateRange());
   const [searchInput, setSearchInput] = React.useState('');
   const [searchQuery, setSearchQuery] = React.useState('');
-  const [users, setUsers] = React.useState<UserItem[]>([]);
   const [togglingSessions, setTogglingSessions] = React.useState<Record<string, boolean>>({});
   const searchTimer = React.useRef<ReturnType<typeof setTimeout>>(undefined);
   const loadingMoreRef = React.useRef(false);
@@ -120,7 +110,6 @@ export default function SessionsPage() {
       params.set('page', String(page));
       params.set('limit', '20');
       if (toolFilter !== 'all') params.set('sourceTool', toolFilter);
-      if (userFilter !== 'all') params.set('userId', userFilter);
       if (favoriteFilter === 'favorited') params.set('favorite', 'true');
       if (favoriteFilter === 'unfavorited') params.set('favorite', 'false');
       const { fromIso, toIso } = rangeToIsoBounds(timeRange);
@@ -145,25 +134,11 @@ export default function SessionsPage() {
       setLoading(false);
       setLoadingMore(false);
     }
-  }, [toolFilter, userFilter, favoriteFilter, timeRange, searchQuery, t]);
-
-  const fetchUsers = React.useCallback(async () => {
-    try {
-      const res = await fetch('/api/users');
-      if (res.ok) {
-        const json = await res.json();
-        setUsers(json.data ?? []);
-      }
-    } catch { /* Non-critical */ }
-  }, []);
+  }, [toolFilter, favoriteFilter, timeRange, searchQuery, t]);
 
   React.useEffect(() => {
     fetchSessions(1);
   }, [fetchSessions]);
-
-  React.useEffect(() => {
-    fetchUsers();
-  }, [fetchUsers]);
 
   React.useEffect(() => {
     if (sessions.length === 0) {
@@ -395,15 +370,6 @@ export default function SessionsPage() {
             <SelectItem value="CodeBuddy">CodeBuddy</SelectItem>
           </SelectContent>
         </Select>
-        <Select value={userFilter} onValueChange={setUserFilter}>
-          <SelectTrigger className="h-9 w-[140px] bg-background"><SelectValue placeholder={t('sessions.filter.user')} /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">{t('sessions.filter.allUsers')}</SelectItem>
-            {users.map((u) => (
-              <SelectItem key={u.id} value={u.id}>{u.name ?? u.email}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
         <Select
           value={favoriteFilter}
           onValueChange={(v) => { setFavoriteFilter(v as 'all' | 'favorited' | 'unfavorited'); }}
@@ -434,7 +400,7 @@ export default function SessionsPage() {
         </div>
       ) : (
         <div className="grid gap-4 lg:grid-cols-[minmax(260px,320px)_minmax(0,1fr)]">
-          <div ref={listScrollRef} className="space-y-2 lg:max-h-[calc(100vh-230px)] lg:overflow-y-auto lg:pr-1">
+          <div ref={listScrollRef} className="space-y-2 lg:max-h-[calc(100vh-230px)] lg:overflow-y-auto lg:px-1">
             {sessions.map((s) => {
               const selected = s.sessionId === selectedSession?.sessionId;
               const title = resolveSessionTitle(s);
@@ -500,7 +466,7 @@ export default function SessionsPage() {
             </div>
           </div>
 
-          <Card className="border-border/70 lg:sticky lg:top-[5.5rem] flex flex-col lg:max-h-[calc(100vh-6rem)]">
+          <Card className="border-border/70 lg:sticky lg:top-[5.5rem] flex flex-col lg:max-h-[calc(100vh-6rem)] min-w-0 overflow-hidden">
             <CardContent className="py-4 flex flex-col h-full overflow-hidden">
               {selectedSession ? (
                 <>
@@ -538,13 +504,11 @@ export default function SessionsPage() {
                     <div className="mt-2 flex items-center gap-2 text-[11px] text-muted-foreground">
                       <span>{t('sessions.messageCount', { count: detailMessageCount })}</span>
                       <span>/</span>
-                      <span>{selectedMeta?.ownerName || selectedMeta?.ownerEmail || selectedSession.ownerName || selectedSession.ownerEmail || t('common.notAvailable')}</span>
-                      <span>/</span>
                       <span>{selectedMeta?.deviceName || selectedSession.deviceName || t('common.notAvailable')}</span>
                     </div>
                   </div>
 
-                  <div className="flex-1 min-h-[260px] overflow-y-auto space-y-2 pr-1 border-t pt-3">
+                  <div className="flex-1 min-h-[260px] min-w-0 overflow-y-auto space-y-2 pr-1 border-t pt-3">
                     {detailLoading ? (
                       Array.from({ length: 4 }).map((_, i) => (
                         <Skeleton key={i} className="h-14 w-full" />
@@ -560,12 +524,11 @@ export default function SessionsPage() {
                         const hasBlocks = (msg.contentBlocks?.length ?? 0) > 0;
 
                         return (
-                          <div key={msg.id} className={cn('py-1.5', isUser ? 'pr-4' : 'pr-1')}>
+                          <div key={msg.id} className={cn('py-1.5 min-w-0', isUser ? 'pr-4' : 'pr-1')}>
                             {isAssistant ? (
                               <Card className="border-border/70 bg-muted/20">
                                 <CardContent className="py-2.5">
                                   <div className="mb-2 flex items-center gap-2 text-[11px] text-muted-foreground">
-                                    <ToolLogo tool={msg.sourceTool} size={14} />
                                     {msg.usage?.model && (
                                       <Badge variant="outline" className="px-1.5 py-0 text-[10px]">
                                         <ModelLogo model={msg.usage.model} size={12} />
@@ -574,7 +537,7 @@ export default function SessionsPage() {
                                     )}
                                     <span>{format(new Date(msg.rawTimestamp), 'MM-dd HH:mm:ss', { locale: dateFnsLocale(locale) })}</span>
                                   </div>
-                                  <div className="space-y-1.5 text-sm">
+                                  <div className="space-y-1.5 text-sm break-words [overflow-wrap:anywhere]">
                                     {hasBlocks ? (
                                       msg.contentBlocks!.map((block, i) => (
                                         <ContentBlockRenderer key={i} block={block} />
@@ -592,7 +555,7 @@ export default function SessionsPage() {
                                   <span>{msg.role}</span>
                                   <span>{format(new Date(msg.rawTimestamp), 'MM-dd HH:mm:ss', { locale: dateFnsLocale(locale) })}</span>
                                 </div>
-                                <div className="space-y-1.5 text-sm">
+                                <div className="space-y-1.5 text-sm break-words [overflow-wrap:anywhere]">
                                   {hasBlocks ? (
                                     msg.contentBlocks!.map((block, i) => (
                                       <ContentBlockRenderer key={i} block={block} />

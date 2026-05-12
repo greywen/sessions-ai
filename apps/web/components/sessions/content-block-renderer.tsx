@@ -43,7 +43,12 @@ export function ContentBlockRenderer({ block }: ContentBlockRendererProps) {
       );
 
     case 'FileRead':
-      return <FileReadSummary filePath={block.filePath ?? block.content} />;
+      return (
+        <FileReadSummary
+          filePath={block.filePath ?? block.content}
+          content={block.filePath ? block.content : null}
+        />
+      );
 
     case 'ShellCommand':
       return (
@@ -89,9 +94,9 @@ export function ContentBlockRenderer({ block }: ContentBlockRendererProps) {
 
     case 'SearchResult':
       return (
-        <div className="text-sm bg-muted/50 rounded-md p-3">
+        <div className="text-sm bg-muted/50 rounded-md p-3 break-words [overflow-wrap:anywhere]">
           <span className="text-muted-foreground font-medium">🔍 {t('block.searchResults')}</span>
-          <p className="mt-1 whitespace-pre-wrap">{block.content}</p>
+          <p className="mt-1 whitespace-pre-wrap break-words [overflow-wrap:anywhere]">{block.content}</p>
         </div>
       );
 
@@ -117,7 +122,7 @@ export function ContentBlockRenderer({ block }: ContentBlockRendererProps) {
     default:
       console.warn(`[ContentBlock] Unknown block_type: ${block.blockType}`);
       return (
-        <div className="text-sm bg-muted/30 rounded p-2 text-muted-foreground">
+        <div className="text-sm bg-muted/30 rounded p-2 text-muted-foreground break-words [overflow-wrap:anywhere]">
           <span className="font-mono text-xs">[{block.blockType}]</span> {block.content}
         </div>
       );

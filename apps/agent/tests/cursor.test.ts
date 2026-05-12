@@ -185,6 +185,49 @@ describe('CursorParser - 解析 composer + bubbles', () => {
     expect(r.messages[0].usage?.inputTokens).toBe(0);
     expect(r.messages[0].usage?.outputTokens).toBe(0);
   });
+
+  test('non-edit tool result is preserved IN FULL (no parser-side truncation)', async () => {
+    // Cursor's `read_file` / `grep` / `bash` tool results used to be cut at
+    // 4000 chars in the parser. That violated the archive promise of this
+    // project: data lost at parse time can never be recovered. The parser
+    // must preserve the full text; only the renderer may collapse it.
+    const HUGE = 'X'.repeat(20_000);
+    const file = buildDb([
+      { key: `composerData:${COMPOSER_ID}`, value: { composerId: COMPOSER_ID } },
+      {
+        key: `bubbleId:${COMPOSER_ID}:${BUBBLE_ASSI}`,
+        value: {
+          bubbleId: BUBBLE_ASSI,
+          type: 2,
+          createdAt: TS_ASSI,
+          toolFormerData: {
+            name: 'read_file',
+            params: JSON.stringify({ target_file: 'big.txt' }),
+            result: HUGE,
+            status: 'completed',
+          },
+        },
+      },
+    ]);
+
+    const p = new CursorParser('m1');
+    const r = await p.parseIncremental(file, 0);
+    expect(r.messages.length).toBe(1);
+
+    const blocks = r.messages[0].contentBlocks;
+    // ToolCall (input only) + ToolOutput (full result)
+    const call = blocks.find((b) => b.blockType === 'ToolCall');
+    const output = blocks.find((b) => b.blockType === 'ToolOutput');
+    expect(call).toBeDefined();
+    expect(output).toBeDefined();
+    expect(call?.toolName).toBe('read_file');
+    expect(call?.toolInput).toMatchObject({ target_file: 'big.txt' });
+
+    expect(output?.content.length).toBe(HUGE.length);
+    expect(output?.content).toBe(HUGE);
+    // Sanity: the legacy truncation marker must NOT appear.
+    expect(output?.content).not.toContain('[truncated]');
+  });
 });
 
 describe('CursorParser - FileEdit normalization', () => {

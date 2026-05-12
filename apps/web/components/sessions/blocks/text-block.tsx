@@ -11,7 +11,7 @@ interface TextBlockProps {
 // Text blocks:markdown rendered
 export function TextBlock({ content }: TextBlockProps) {
   return (
-    <div className="prose prose-sm dark:prose-invert max-w-none break-words">
+    <div className="prose prose-sm dark:prose-invert max-w-none break-words [overflow-wrap:anywhere] [&_pre]:whitespace-pre-wrap [&_pre]:break-words [&_code]:break-words">
       <ReactMarkdown remarkPlugins={[remarkGfm]}>
         {content}
       </ReactMarkdown>

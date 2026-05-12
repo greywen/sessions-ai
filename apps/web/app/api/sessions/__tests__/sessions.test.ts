@@ -7,7 +7,6 @@ const querySchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(20),
   sourceTool: z.string().optional(),
   machineId: z.string().uuid().optional(),
-  userId: z.string().uuid().optional(),
   from: z.string().optional(),
   to: z.string().optional(),
   search: z.string().max(200).optional(),
@@ -42,14 +41,6 @@ describe('Sessions API Schema Correction', () => {
       expect(result.success).toBe(true);
       expect(result.data?.page).toBe(2);
       expect(result.data?.sourceTool).toBe('ClaudeCode');
-    });
-
-    it('Acceptable userId Filter Bar', () => {
-      const result = querySchema.safeParse({
-        userId: '550e8400-e29b-41d4-a716-446655440000',
-      });
-      expect(result.success).toBe(true);
-      expect(result.data?.userId).toBe('550e8400-e29b-41d4-a716-446655440000');
     });
 
     it('Acceptable search Specs', () => {

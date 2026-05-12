@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { db } from '@/lib/db';
-import { machines, users, normalizedMessages } from '@/lib/db/schema';
+import { machines, normalizedMessages } from '@/lib/db/schema';
 import { getSession } from '@/lib/auth/session';
 import { hasRole } from '@/lib/auth/roles';
 import { logger } from '@/lib/logger';
@@ -68,9 +68,6 @@ export async function GET(request: Request) {
         osUsername: machines.osUsername,
         displayName: machines.displayName,
         osInfo: machines.osInfo,
-        ownerId: machines.ownerId,
-        ownerName: users.name,
-        ownerEmail: users.email,
         status: machines.status,
         agentVersion: machines.agentVersion,
         lastSeenAt: machines.lastSeenAt,
@@ -78,7 +75,6 @@ export async function GET(request: Request) {
         updatedAt: machines.updatedAt,
       })
       .from(machines)
-      .leftJoin(users, eq(machines.ownerId, users.id))
       .where(whereClause)
       .orderBy(desc(machines.createdAt))
       .limit(params.limit)

@@ -35,7 +35,6 @@ CREATE TABLE "config_read_requests" (
 CREATE TABLE "daily_stats" (
 	"day" date NOT NULL,
 	"machine_id" uuid NOT NULL,
-	"owner_id" uuid,
 	"source_tool" text NOT NULL,
 	"model" text,
 	"message_count" integer DEFAULT 0 NOT NULL,
@@ -62,13 +61,28 @@ CREATE TABLE "device_configs" (
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
+CREATE TABLE "favorite_snapshots" (
+	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"user_id" uuid NOT NULL,
+	"source_message_id" uuid NOT NULL,
+	"source_session_id" text NOT NULL,
+	"source_tool" text NOT NULL,
+	"machine_id" uuid NOT NULL,
+	"role" text NOT NULL,
+	"content_blocks" jsonb NOT NULL,
+	"usage" jsonb,
+	"metadata" jsonb,
+	"raw_timestamp" timestamp with time zone NOT NULL,
+	"user_note" text,
+	"snapshotted_at" timestamp with time zone DEFAULT now() NOT NULL
+);
+--> statement-breakpoint
 CREATE TABLE "machines" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"fingerprint" text NOT NULL,
 	"os_username" text,
 	"display_name" text,
 	"os_info" jsonb,
-	"owner_id" uuid,
 	"auth_key" uuid DEFAULT gen_random_uuid() NOT NULL,
 	"status" text DEFAULT 'pending' NOT NULL,
 	"agent_version" text,
@@ -88,20 +102,9 @@ CREATE TABLE "normalized_messages" (
 	"role" text NOT NULL,
 	"content_blocks" jsonb,
 	"usage" jsonb,
+	"cost_usd" numeric(12, 6) DEFAULT '0' NOT NULL,
 	"raw_timestamp" timestamp with time zone NOT NULL,
 	"metadata" jsonb,
-	"created_at" timestamp with time zone DEFAULT now() NOT NULL
-);
---> statement-breakpoint
-CREATE TABLE "pricing_table" (
-	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
-	"model" text NOT NULL,
-	"provider" text NOT NULL,
-	"input_price_per_mtok" numeric(10, 4) NOT NULL,
-	"output_price_per_mtok" numeric(10, 4) NOT NULL,
-	"cache_price_per_mtok" numeric(10, 4),
-	"effective_from" date NOT NULL,
-	"effective_to" date,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
@@ -116,6 +119,13 @@ CREATE TABLE "raw_events" (
 	"byte_offset_end" bigint,
 	"parsed_at" timestamp with time zone,
 	"parse_version" text,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL
+);
+--> statement-breakpoint
+CREATE TABLE "session_favorites" (
+	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"user_id" uuid NOT NULL,
+	"session_id" text NOT NULL,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
@@ -137,18 +147,23 @@ ALTER TABLE "config_push_logs" ADD CONSTRAINT "config_push_logs_pushed_by_users_
 ALTER TABLE "config_read_requests" ADD CONSTRAINT "config_read_requests_machine_id_machines_id_fk" FOREIGN KEY ("machine_id") REFERENCES "public"."machines"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "config_read_requests" ADD CONSTRAINT "config_read_requests_requested_by_users_id_fk" FOREIGN KEY ("requested_by") REFERENCES "public"."users"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "device_configs" ADD CONSTRAINT "device_configs_created_by_users_id_fk" FOREIGN KEY ("created_by") REFERENCES "public"."users"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "machines" ADD CONSTRAINT "machines_owner_id_users_id_fk" FOREIGN KEY ("owner_id") REFERENCES "public"."users"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "favorite_snapshots" ADD CONSTRAINT "favorite_snapshots_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "session_favorites" ADD CONSTRAINT "session_favorites_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 CREATE INDEX "idx_push_logs_config" ON "config_push_logs" USING btree ("config_id");--> statement-breakpoint
 CREATE INDEX "idx_push_logs_machine" ON "config_push_logs" USING btree ("machine_id");--> statement-breakpoint
 CREATE INDEX "idx_config_read_machine" ON "config_read_requests" USING btree ("machine_id","status");--> statement-breakpoint
-CREATE INDEX "idx_daily_stats_owner" ON "daily_stats" USING btree ("owner_id","day");--> statement-breakpoint
+CREATE UNIQUE INDEX "idx_daily_stats_unique" ON "daily_stats" USING btree ("day","machine_id","source_tool","model");--> statement-breakpoint
 CREATE INDEX "idx_daily_stats_day" ON "daily_stats" USING btree ("day");--> statement-breakpoint
+CREATE UNIQUE INDEX "idx_favorite_snapshots_unique" ON "favorite_snapshots" USING btree ("user_id","source_message_id");--> statement-breakpoint
+CREATE INDEX "idx_favorite_snapshots_user" ON "favorite_snapshots" USING btree ("user_id","snapshotted_at");--> statement-breakpoint
+CREATE INDEX "idx_favorite_snapshots_session" ON "favorite_snapshots" USING btree ("source_session_id");--> statement-breakpoint
 CREATE UNIQUE INDEX "idx_machines_fingerprint_user" ON "machines" USING btree ("fingerprint","os_username");--> statement-breakpoint
 CREATE INDEX "idx_machines_auth_key" ON "machines" USING btree ("auth_key");--> statement-breakpoint
 CREATE INDEX "idx_machines_status" ON "machines" USING btree ("status");--> statement-breakpoint
-CREATE INDEX "idx_machines_owner" ON "machines" USING btree ("owner_id");--> statement-breakpoint
 CREATE INDEX "idx_nm_machine_time" ON "normalized_messages" USING btree ("machine_id","created_at");--> statement-breakpoint
 CREATE INDEX "idx_nm_session" ON "normalized_messages" USING btree ("session_id");--> statement-breakpoint
 CREATE INDEX "idx_nm_source_tool" ON "normalized_messages" USING btree ("source_tool","created_at");--> statement-breakpoint
-CREATE UNIQUE INDEX "idx_pricing_unique" ON "pricing_table" USING btree ("model","provider","effective_from");--> statement-breakpoint
-CREATE UNIQUE INDEX "idx_raw_events_unique" ON "raw_events" USING btree ("machine_id","source_file_path","content_hash");
+CREATE UNIQUE INDEX "idx_raw_events_unique" ON "raw_events" USING btree ("machine_id","source_file_path","content_hash");--> statement-breakpoint
+CREATE UNIQUE INDEX "idx_session_favorites_unique" ON "session_favorites" USING btree ("user_id","session_id");--> statement-breakpoint
+CREATE INDEX "idx_session_favorites_user" ON "session_favorites" USING btree ("user_id");--> statement-breakpoint
+CREATE INDEX "idx_session_favorites_session" ON "session_favorites" USING btree ("session_id");

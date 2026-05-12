@@ -39,9 +39,6 @@ interface Device {
   osUsername: string | null;
   displayName: string | null;
   osInfo: Record<string, string> | null;
-  ownerId: string | null;
-  ownerName: string | null;
-  ownerEmail: string | null;
   status: string;
   agentVersion: string | null;
   lastSeenAt: string | null;
@@ -469,7 +466,6 @@ export default function DevicesPage() {
                     <TableRow>
                       <TableHead className="w-[40px]"><Checkbox checked={allSelected} onCheckedChange={toggleAll} /></TableHead>
                       <TableHead>{t('devices.col.name')}</TableHead>
-                      <TableHead>{t('devices.col.user')}</TableHead>
                       <TableHead>{t('devices.col.status')}</TableHead>
                       <TableHead>{t('devices.col.lastSeen')}</TableHead>
                     </TableRow>
@@ -493,7 +489,6 @@ export default function DevicesPage() {
                               {device.displayName || device.osUsername || t('common.untitled')}
                             </div>
                           </TableCell>
-                          <TableCell>{device.ownerName || device.ownerEmail || t('common.notAvailable')}</TableCell>
                           <TableCell><Badge variant={statusVariant}>{getStatusLabel(device.status)}</Badge></TableCell>
                           <TableCell className="text-xs text-muted-foreground">
                             {device.lastSeenAt ? formatDistanceToNow(new Date(device.lastSeenAt), { addSuffix: true, locale: dateFnsLocale(locale) }) : t('devices.neverOnline')}
@@ -556,10 +551,6 @@ export default function DevicesPage() {
                         </div>
 
                         <dl className="grid grid-cols-2 gap-3 text-xs sm:text-sm">
-                          <div>
-                            <dt className="text-muted-foreground">{t('devices.col.user')}</dt>
-                            <dd>{panelDevice.ownerName || panelDevice.ownerEmail || t('common.notAvailable')}</dd>
-                          </div>
                           <div>
                             <dt className="text-muted-foreground">{t('devices.detail.info.agentVersion')}</dt>
                             <dd className="font-mono">{panelDevice.agentVersion ?? '--'}</dd>

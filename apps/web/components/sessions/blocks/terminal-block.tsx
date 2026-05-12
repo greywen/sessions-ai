@@ -44,13 +44,13 @@ export function TerminalBlock({ command, output, exitCode }: TerminalBlockProps)
                 </button>
               </CollapsibleTrigger>
               <CollapsibleContent>
-                <pre className="overflow-x-auto whitespace-pre-wrap px-3 pb-2 font-mono text-xs text-foreground/80">
+                <pre className="overflow-x-auto whitespace-pre-wrap break-words [overflow-wrap:anywhere] px-3 pb-2 font-mono text-xs text-foreground/80">
                   {output}
                 </pre>
               </CollapsibleContent>
             </Collapsible>
           ) : (
-            <pre className="overflow-x-auto whitespace-pre-wrap border-t border-border/70 px-3 pb-2 pt-2 font-mono text-xs text-foreground/80">
+            <pre className="overflow-x-auto whitespace-pre-wrap break-words [overflow-wrap:anywhere] border-t border-border/70 px-3 pb-2 pt-2 font-mono text-xs text-foreground/80">
               {output}
             </pre>
           )}

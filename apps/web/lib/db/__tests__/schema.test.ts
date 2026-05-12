@@ -9,11 +9,10 @@ describe('Database Schema Definition', () => {
     expect(schema.rawEvents).toBeDefined();
     expect(schema.deviceConfigs).toBeDefined();
     expect(schema.configPushLogs).toBeDefined();
-    expect(schema.pricingTable).toBeDefined();
     expect(schema.dailyStats).toBeDefined();
     expect(schema.auditLogs).toBeDefined();
     expect(schema.sessionFavorites).toBeDefined();
-    expect(schema.messageFavorites).toBeDefined();
+    expect(schema.favoriteSnapshots).toBeDefined();
   });
 
   it('users The table should have the correct required fields', () => {
@@ -49,19 +48,25 @@ describe('Database Schema Definition', () => {
     expect(columns).toContain('sessionId');
   });
 
-  it('messageFavorites The table should have favorite related fields', () => {
-    const columns = Object.keys(schema.messageFavorites);
+  it('favoriteSnapshots table should freeze a full UnifiedMessage payload', () => {
+    const columns = Object.keys(schema.favoriteSnapshots);
+    // Identity
     expect(columns).toContain('id');
     expect(columns).toContain('userId');
-    expect(columns).toContain('messageId');
-  });
-
-  it('pricingTable Table should have price related fields', () => {
-    const columns = Object.keys(schema.pricingTable);
-    expect(columns).toContain('model');
-    expect(columns).toContain('provider');
-    expect(columns).toContain('inputPricePerMtok');
-    expect(columns).toContain('outputPricePerMtok');
+    // Soft references — kept after source row is gone (no FK by design)
+    expect(columns).toContain('sourceMessageId');
+    expect(columns).toContain('sourceSessionId');
+    // Frozen UnifiedMessage payload — must outlive parser rewrites
+    expect(columns).toContain('sourceTool');
+    expect(columns).toContain('machineId');
+    expect(columns).toContain('role');
+    expect(columns).toContain('contentBlocks');
+    expect(columns).toContain('usage');
+    expect(columns).toContain('metadata');
+    expect(columns).toContain('rawTimestamp');
+    // User affordances
+    expect(columns).toContain('userNote');
+    expect(columns).toContain('snapshottedAt');
   });
 
   it('dailyStats Table should have aggregate fields', () => {

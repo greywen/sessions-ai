@@ -27,13 +27,12 @@ export async function POST(request: Request) {
     // Perform aggregation:FROM normalized_messages Aggregate to daily_stats
     // Cost Formula:(input_tokens/1M × input_price) + (output_tokens/1M × output_price) + (cache_tokens/1M × cache_price)
     await db.execute(sql`
-      INSERT INTO daily_stats (day, machine_id, owner_id, source_tool, model,
+      INSERT INTO daily_stats (day, machine_id, source_tool, model,
         message_count, session_count, total_input_tokens, total_output_tokens,
         total_cache_tokens, estimated_cost_usd)
       SELECT
         CURRENT_DATE AS day,
         nm.machine_id,
-        m.owner_id,
         nm.source_tool,
         nm.usage->>'model' AS model,
         COUNT(*) AS message_count,
@@ -46,14 +45,12 @@ export async function POST(request: Request) {
         ), 0) AS total_cache_tokens,
         COALESCE(SUM(nm.cost_usd), 0) AS estimated_cost_usd
       FROM normalized_messages nm
-      JOIN machines m ON nm.machine_id = m.id
       WHERE nm.created_at >= CURRENT_DATE
         AND nm.usage IS NOT NULL
         AND nm.usage->>'model' IS NOT NULL
-      GROUP BY 1, 2, 3, 4, 5
+      GROUP BY 1, 2, 3, 4
       ON CONFLICT (day, machine_id, source_tool, model)
       DO UPDATE SET
-        owner_id = EXCLUDED.owner_id,
         message_count = EXCLUDED.message_count,
         session_count = EXCLUDED.session_count,
         total_input_tokens = EXCLUDED.total_input_tokens,

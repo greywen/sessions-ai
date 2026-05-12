@@ -5,7 +5,7 @@ import { db } from '@/lib/db';
 import { normalizedMessages } from '@/lib/db/schema';
 import { authenticateAgent, isAgentContext } from '@/lib/auth/agent-auth';
 import { logger } from '@/lib/logger';
-import { computeCostFor, loadPricingForBatch, type UsageJson } from '@/lib/cost/compute';
+import { computeCostFor, type UsageJson } from '@/lib/cost/compute';
 
 const contentBlockSchema = z.object({
   blockType: z.string(),
@@ -91,16 +91,12 @@ export async function POST(request: Request) {
     const batchSize = 50;
     for (let i = 0; i < messages.length; i += batchSize) {
       const batch = messages.slice(i, i + batchSize);
-      const pricings = await loadPricingForBatch(
-        db,
-        batch.map((m) => ({ usage: (m.usage ?? null) as UsageJson | null })),
-      );
       const values = batch.map((m) => {
         const ts = new Date(m.timestamp);
-        const { costUsd, pricingId } = computeCostFor(
+        const { costUsd } = computeCostFor(
           (m.usage ?? null) as UsageJson | null,
           ts,
-          pricings,
+          [],
         );
         return {
           id: m.id,
@@ -112,7 +108,6 @@ export async function POST(request: Request) {
           contentBlocks: m.contentBlocks,
           usage: m.usage ?? null,
           costUsd,
-          pricingId,
           rawTimestamp: ts,
           metadata: m.metadata ?? {},
         };
@@ -132,7 +127,6 @@ export async function POST(request: Request) {
               contentBlocks: sql`excluded.content_blocks`,
               usage: sql`excluded.usage`,
               costUsd: sql`excluded.cost_usd`,
-              pricingId: sql`excluded.pricing_id`,
               rawTimestamp: sql`excluded.raw_timestamp`,
               metadata: sql`excluded.metadata`,
             },

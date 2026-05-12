@@ -125,7 +125,11 @@ function parseUsage(
   const hasAny = input > 0 || output > 0 || cacheRead > 0 || cacheWrite > 0;
   if (!hasAny && !preserveZero) return null;
   return {
-    inputTokens: Math.max(0, input - cacheRead),
+    // Anthropic's input_tokens already excludes cache_read_input_tokens and
+    // cache_creation_input_tokens — the three counters are disjoint. Do not
+    // subtract; subtracting clamps almost every row to 0 and starves the
+    // displayed Input total.
+    inputTokens: input,
     outputTokens: output,
     cacheCreationInputTokens: cacheWrite > 0 || preserveZero ? cacheWrite : null,
     cacheReadInputTokens: cacheRead > 0 || preserveZero ? cacheRead : null,
@@ -386,28 +390,34 @@ function parseClaudeBlocks(
 
 function inferRole(baseType: string, messageRole: string | null, signals: ParsedBlocks): MessageRole {
   const roleRaw = (messageRole ?? baseType).toLowerCase();
-  const base: MessageRole = (() => {
-    switch (roleRaw) {
-      case 'user':
-        return 'User';
-      case 'assistant':
-        return 'Assistant';
-      case 'system':
-        return 'System';
-      case 'tool_use':
-        return 'ToolUse';
-      case 'tool_result':
-        return 'ToolResult';
-      default:
-        return 'Assistant';
-    }
-  })();
 
-  if (!signals.hasText) {
-    if (signals.hasToolUse && !signals.hasToolResult) return 'ToolUse';
-    if (signals.hasToolResult && !signals.hasToolUse) return 'ToolResult';
+  // Assistant rows ALWAYS map to 'Assistant'. One API response (one
+  // message.id) is one UnifiedMessage, regardless of whether it contains
+  // text, thinking, tool_use, or any combination. The block list inside
+  // tells the renderer how to draw each piece; the message role tells it
+  // who spoke. The previous per-row 'ToolUse' downgrade dropped the
+  // TokenUsageBar in the viewer because the assistant card branch only
+  // matches role === 'Assistant'.
+  if (roleRaw === 'assistant') return 'Assistant';
+
+  // For user rows, tool_result-only payloads are surfaced as 'ToolResult'
+  // so the viewer renders them as compact tool output rather than a chat
+  // bubble. A real user prompt has text and stays 'User'.
+  if (roleRaw === 'user') {
+    if (signals.hasToolResult && !signals.hasText && !signals.hasToolUse) return 'ToolResult';
+    return 'User';
   }
-  return base;
+
+  switch (roleRaw) {
+    case 'system':
+      return 'System';
+    case 'tool_use':
+      return 'ToolUse';
+    case 'tool_result':
+      return 'ToolResult';
+    default:
+      return 'Assistant';
+  }
 }
 
 function resolveSessionId(line: Record<string, unknown>, filePath: string): string {
@@ -474,14 +484,23 @@ export class ClaudeCodeParser implements ToolParser {
     }
     if (raw.length === 0) return { messages: [], newOffset: 0 };
 
-    const toolUseIndex = new Map<string, ToolUseIndexEntry>();
-    const messages: UnifiedMessage[] = [];
-
     // Last byte of the last complete (newline-terminated) line. The streaming
     // VS Code writer can leave a partial trailing line; advancing past it
     // would permanently skip that record once the rest is flushed.
     let lastCompleteEnd = -1;
 
+    interface LineRecord {
+      type: 'user' | 'assistant';
+      parsedLine: Record<string, unknown>;
+      messageObj: Record<string, unknown>;
+      sourceSessionId: string;
+      msgId: string | null;
+      rawUuid: string;
+      parentRawUuid: string | null;
+      lineEndByte: number;
+    }
+
+    const records: LineRecord[] = [];
     let lineStart = 0;
     let lineNo = 0;
 
@@ -492,7 +511,7 @@ export class ClaudeCodeParser implements ToolParser {
 
       let lineEnd = i;
       if (lineEnd > lineStart && raw[lineEnd - 1] === 13) lineEnd -= 1; // trim '\r'
-      const consumedBytes = i === raw.length ? i : i + 1;
+      const lineEndByte = i === raw.length ? i : i + 1;
       lineNo += 1;
 
       const lineText = raw.subarray(lineStart, lineEnd).toString('utf-8').trim();
@@ -510,69 +529,151 @@ export class ClaudeCodeParser implements ToolParser {
       const type = asString(parsedLine.type) ?? '';
       if (type !== 'user' && type !== 'assistant') continue;
 
-      const sourceSessionId = resolveSessionId(parsedLine, filePath);
       const messageObj = asObject(parsedLine.message);
       if (!messageObj) continue;
 
-      const blocksParsed = parseClaudeBlocks(
-        messageObj.content,
-        parsedLine.toolUseResult,
-        sourceSessionId,
-        toolUseIndex,
-        {
-          cwd: asString(parsedLine.cwd),
-          gitBranch: asString(parsedLine.gitBranch),
-        },
-      );
+      records.push({
+        type: type as 'user' | 'assistant',
+        parsedLine,
+        messageObj,
+        sourceSessionId: resolveSessionId(parsedLine, filePath),
+        msgId: asString(messageObj.id),
+        rawUuid: asString(parsedLine.uuid) ?? `line:${lineNo}`,
+        parentRawUuid: asString(parsedLine.parentUuid),
+        lineEndByte,
+      });
+    }
 
-      if (blocksParsed.blocks.length === 0) {
-        const fallbackResult = stringifyToolUseResult(parsedLine.toolUseResult);
-        if (fallbackResult.length > 0) {
-          blocksParsed.blocks.push(emptyBlock('ToolOutput', truncate(fallbackResult)));
-          blocksParsed.hasToolResult = true;
-        } else {
-          continue;
+    // Group consecutive assistant rows that share the same message.id. The
+    // Claude Code jsonl writer splits one API response across multiple lines
+    // (e.g. `thinking`, `tool_use`, `text`) — each line carries the SAME
+    // cumulative `message.usage`. Treating each line as its own message both
+    // duplicates the displayed token counts and multiplies cost. The unit of
+    // a "message" is one API response, keyed by `message.id`.
+    interface Group {
+      records: LineRecord[];
+      msgId: string | null;
+    }
+    const groups: Group[] = [];
+    for (let i = 0; i < records.length; ) {
+      const r = records[i];
+      if (r.type !== 'assistant' || !r.msgId) {
+        groups.push({ records: [r], msgId: r.msgId });
+        i++;
+        continue;
+      }
+      let j = i + 1;
+      while (
+        j < records.length &&
+        records[j].type === 'assistant' &&
+        records[j].msgId === r.msgId
+      ) {
+        j++;
+      }
+      groups.push({ records: records.slice(i, j), msgId: r.msgId });
+      i = j;
+    }
+
+    // Stable id per group: msgId-based when available so subsequent ticks
+    // (which re-read the whole file) re-emit the same UnifiedMessage id and
+    // upsert overwrites the previous content_blocks/usage with the merged
+    // form — no information is lost across incremental boundaries.
+    const groupIdFor = (g: Group): string => {
+      const sid = g.records[0].sourceSessionId;
+      return g.msgId
+        ? toUuidV5(`claude:${sid}:msg:${g.msgId}`)
+        : toUuidV5(`claude:${sid}:${g.records[0].rawUuid}`);
+    };
+
+    // Map every consumed rawUuid (across all groups in this file) to its
+    // merged group id so cross-row parent pointers resolve correctly.
+    const uuidToMergedId = new Map<string, string>();
+    for (const g of groups) {
+      const gid = groupIdFor(g);
+      for (const r of g.records) uuidToMergedId.set(r.rawUuid, gid);
+    }
+
+    const toolUseIndex = new Map<string, ToolUseIndexEntry>();
+    const messages: UnifiedMessage[] = [];
+
+    for (const g of groups) {
+      const head = g.records[0];
+      const tail = g.records[g.records.length - 1];
+      const sourceSessionId = head.sourceSessionId;
+
+      const allBlocks: ContentBlock[] = [];
+      const signals = { hasText: false, hasToolUse: false, hasToolResult: false };
+      for (const r of g.records) {
+        const parsed = parseClaudeBlocks(
+          r.messageObj.content,
+          r.parsedLine.toolUseResult,
+          sourceSessionId,
+          toolUseIndex,
+          {
+            cwd: asString(r.parsedLine.cwd),
+            gitBranch: asString(r.parsedLine.gitBranch),
+          },
+        );
+        if (parsed.blocks.length === 0) {
+          const fallback = stringifyToolUseResult(r.parsedLine.toolUseResult);
+          if (fallback.length > 0) {
+            parsed.blocks.push(emptyBlock('ToolOutput', truncate(fallback)));
+            parsed.hasToolResult = true;
+          }
         }
+        for (const b of parsed.blocks) allBlocks.push(b);
+        signals.hasText ||= parsed.hasText;
+        signals.hasToolUse ||= parsed.hasToolUse;
+        signals.hasToolResult ||= parsed.hasToolResult;
       }
 
-      const messageRole = asString(messageObj.role);
-      const role = inferRole(type, messageRole, blocksParsed);
-      const model = asString(messageObj.model) ?? 'unknown';
-      const usage = parseUsage(asObject(messageObj.usage), model, true);
+      // Skip empty groups (e.g. a tool_result whose FileEdit status was
+      // already absorbed into a prior tool_use group).
+      if (allBlocks.length === 0) continue;
 
-      const rawUuid = asString(parsedLine.uuid) ?? `line:${lineNo}`;
-      const parentRaw = asString(parsedLine.parentUuid);
+      // Skip groups already emitted in a prior tick. A group is "new" if its
+      // tail line extends past the previously-consumed offset; this also
+      // re-emits a group when a new line joined its tail (stable id + upsert
+      // means the merged form replaces the partial one).
+      if (tail.lineEndByte <= startOffset) continue;
 
-      const metadata: Record<string, unknown> = {
-        sourceSessionId,
-      };
-      if (asString(parsedLine.cwd)) metadata.cwd = asString(parsedLine.cwd);
-      if (asString(parsedLine.entrypoint)) metadata.entrypoint = asString(parsedLine.entrypoint);
-      if (asString(parsedLine.version)) metadata.clientVersion = asString(parsedLine.version);
-      if (asString(parsedLine.gitBranch)) metadata.gitBranch = asString(parsedLine.gitBranch);
-      if (asString(parsedLine.promptId)) metadata.promptId = asString(parsedLine.promptId);
-      if (asString(parsedLine.permissionMode)) metadata.permissionMode = asString(parsedLine.permissionMode);
-      if (asString(parsedLine.sourceToolAssistantUUID)) {
-        metadata.sourceToolAssistantUUID = asString(parsedLine.sourceToolAssistantUUID);
+      const messageRole = asString(head.messageObj.role);
+      const role = inferRole(head.type, messageRole, signals as ParsedBlocks);
+      const model = asString(head.messageObj.model) ?? 'unknown';
+      // Usage is identical across rows in the group (same API response).
+      const usage = parseUsage(asObject(head.messageObj.usage), model, true);
+
+      const metadata: Record<string, unknown> = { sourceSessionId };
+      if (asString(head.parsedLine.cwd)) metadata.cwd = asString(head.parsedLine.cwd);
+      if (asString(head.parsedLine.entrypoint)) metadata.entrypoint = asString(head.parsedLine.entrypoint);
+      if (asString(head.parsedLine.version)) metadata.clientVersion = asString(head.parsedLine.version);
+      if (asString(head.parsedLine.gitBranch)) metadata.gitBranch = asString(head.parsedLine.gitBranch);
+      if (asString(head.parsedLine.promptId)) metadata.promptId = asString(head.parsedLine.promptId);
+      if (asString(head.parsedLine.permissionMode)) metadata.permissionMode = asString(head.parsedLine.permissionMode);
+      if (asString(head.parsedLine.sourceToolAssistantUUID)) {
+        metadata.sourceToolAssistantUUID = asString(head.parsedLine.sourceToolAssistantUUID);
       }
-      if (asString(parsedLine.error)) metadata.error = asString(parsedLine.error);
-      if (parsedLine.isApiErrorMessage !== undefined) metadata.isApiErrorMessage = parsedLine.isApiErrorMessage;
-      if (asString(messageObj.id)) metadata.sourceMessageId = asString(messageObj.id);
+      if (asString(head.parsedLine.error)) metadata.error = asString(head.parsedLine.error);
+      if (head.parsedLine.isApiErrorMessage !== undefined) metadata.isApiErrorMessage = head.parsedLine.isApiErrorMessage;
+      if (g.msgId) metadata.sourceMessageId = g.msgId;
       metadata.model = model;
 
-      if (consumedBytes <= startOffset) continue;
+      const parentId = head.parentRawUuid
+        ? uuidToMergedId.get(head.parentRawUuid) ??
+          toUuidV5(`claude:${sourceSessionId}:${head.parentRawUuid}`)
+        : null;
 
       messages.push({
-        id: toUuidV5(`claude:${sourceSessionId}:${rawUuid}`),
+        id: groupIdFor(g),
         sessionId: toUuidV5(`session:${sourceSessionId}`),
-        parentId: parentRaw ? toUuidV5(`claude:${sourceSessionId}:${parentRaw}`) : null,
+        parentId,
         machineId: this.machineId,
         sourceTool: 'ClaudeCode',
         role,
-        contentBlocks: blocksParsed.blocks,
+        contentBlocks: allBlocks,
         usage,
         timestamp: (() => {
-          const tsMs = parseTimestampMs(parsedLine.timestamp);
+          const tsMs = parseTimestampMs(head.parsedLine.timestamp);
           return tsMs > 0 ? new Date(tsMs).toISOString() : new Date().toISOString();
         })(),
         metadata,

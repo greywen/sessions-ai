@@ -10,7 +10,6 @@ import {
   date,
   uniqueIndex,
   index,
-  boolean,
 } from 'drizzle-orm/pg-core';
 
 // ==================== users ====================
@@ -31,7 +30,6 @@ export const machines = pgTable('machines', {
   osUsername: text('os_username'),
   displayName: text('display_name'),
   osInfo: jsonb('os_info'),
-  ownerId: uuid('owner_id').references(() => users.id),
   authKey: uuid('auth_key').defaultRandom().unique().notNull(),
   status: text('status', { enum: ['pending', 'active', 'disabled'] }).default('pending').notNull(),
   agentVersion: text('agent_version'),
@@ -43,7 +41,6 @@ export const machines = pgTable('machines', {
   uniqueIndex('idx_machines_fingerprint_user').on(table.fingerprint, table.osUsername),
   index('idx_machines_auth_key').on(table.authKey),
   index('idx_machines_status').on(table.status),
-  index('idx_machines_owner').on(table.ownerId),
 ]);
 
 // ==================== normalized_messages ====================
@@ -56,16 +53,7 @@ export const normalizedMessages = pgTable('normalized_messages', {
   role: text('role').notNull(),
   contentBlocks: jsonb('content_blocks'),
   usage: jsonb('usage'),
-  // Materialized cost in USD computed at ingest time against the pricing_table
-  // row valid for `raw_timestamp`. Stored as numeric(12,6) for sub-cent
-  // precision. Reads SUM(cost_usd) directly instead of joining pricing at
-  // query time. See lib/cost/compute.ts for the exact formula and matching
-  // rules. Zero when usage is null OR no matching pricing row was found.
   costUsd: numeric('cost_usd', { precision: 12, scale: 6 }).default('0').notNull(),
-  // FK-style reference to the pricing_table row used for this message's
-  // cost calculation (no hard FK so old pricing rows can be deleted without
-  // cascading). null when no matching pricing was found.
-  pricingId: uuid('pricing_id'),
   rawTimestamp: timestamp('raw_timestamp', { withTimezone: true }).notNull(),
   metadata: jsonb('metadata'),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
@@ -87,16 +75,42 @@ export const sessionFavorites = pgTable('session_favorites', {
   index('idx_session_favorites_session').on(table.sessionId),
 ]);
 
-// ==================== message_favorites ====================
-export const messageFavorites = pgTable('message_favorites', {
+// ==================== favorite_snapshots ====================
+// Replaces the old `message_favorites` table.
+//
+// Why a snapshot table?
+// The product promise is "save messages users may want later". A plain
+// (user_id, message_id) reference fails that promise the moment the source
+// `normalized_messages` row is rebuilt, re-parsed, or pruned. So when a user
+// stars a message, we deep-copy the full `UnifiedMessage` payload here.
+// The snapshot is the source of truth for the favorites view; it survives
+// schema changes, parser rewrites, and source-data deletion.
+//
+// `source_message_id` / `source_session_id` are kept as soft references only
+// (no FK, no cascade) so historical favorites stay even after a re-ingest.
+export const favoriteSnapshots = pgTable('favorite_snapshots', {
   id: uuid('id').defaultRandom().primaryKey(),
   userId: uuid('user_id').notNull().references(() => users.id),
-  messageId: uuid('message_id').notNull().references(() => normalizedMessages.id, { onDelete: 'cascade' }),
-  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  // Soft references — no FK, intentional. Keep the snapshot even if the
+  // source row is gone.
+  sourceMessageId: uuid('source_message_id').notNull(),
+  sourceSessionId: text('source_session_id').notNull(),
+  // Frozen copy of UnifiedMessage at favorite-time. All platform-specific
+  // metadata stays inside `metadata`.
+  sourceTool: text('source_tool').notNull(),
+  machineId: uuid('machine_id').notNull(),
+  role: text('role').notNull(),
+  contentBlocks: jsonb('content_blocks').notNull(),
+  usage: jsonb('usage'),
+  metadata: jsonb('metadata'),
+  rawTimestamp: timestamp('raw_timestamp', { withTimezone: true }).notNull(),
+  // User's free-form note attached to the favorite.
+  userNote: text('user_note'),
+  snapshottedAt: timestamp('snapshotted_at', { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [
-  uniqueIndex('idx_message_favorites_unique').on(table.userId, table.messageId),
-  index('idx_message_favorites_user').on(table.userId),
-  index('idx_message_favorites_message').on(table.messageId),
+  uniqueIndex('idx_favorite_snapshots_unique').on(table.userId, table.sourceMessageId),
+  index('idx_favorite_snapshots_user').on(table.userId, table.snapshottedAt),
+  index('idx_favorite_snapshots_session').on(table.sourceSessionId),
 ]);
 
 // ==================== raw_events ====================
@@ -155,30 +169,10 @@ export const configPushLogs = pgTable('config_push_logs', {
   index('idx_push_logs_machine').on(table.machineId),
 ]);
 
-// ==================== pricing_table ====================
-export const pricingTable = pgTable('pricing_table', {
-  id: uuid('id').defaultRandom().primaryKey(),
-  model: text('model').notNull(),
-  provider: text('provider').notNull(),
-  inputPricePerMtok: numeric('input_price_per_mtok', { precision: 10, scale: 4 }).notNull(),
-  outputPricePerMtok: numeric('output_price_per_mtok', { precision: 10, scale: 4 }).notNull(),
-  cachePricePerMtok: numeric('cache_price_per_mtok', { precision: 10, scale: 4 }),
-  effectiveFrom: date('effective_from').notNull(),
-  effectiveTo: date('effective_to'),
-  syncSource: text('sync_source', { enum: ['manual', 'openrouter'] }).default('manual').notNull(),
-  syncLocked: boolean('sync_locked').default(false).notNull(),
-  lastSyncedAt: timestamp('last_synced_at', { withTimezone: true }),
-  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-}, (table) => [
-  uniqueIndex('idx_pricing_unique').on(table.model, table.provider, table.effectiveFrom),
-  uniqueIndex('idx_pricing_model_unique').on(table.model),
-]);
-
 // ==================== daily_stats ====================
 export const dailyStats = pgTable('daily_stats', {
   day: date('day').notNull(),
   machineId: uuid('machine_id').notNull(),
-  ownerId: uuid('owner_id'),
   sourceTool: text('source_tool').notNull(),
   model: text('model'),
   messageCount: integer('message_count').default(0).notNull(),
@@ -188,7 +182,7 @@ export const dailyStats = pgTable('daily_stats', {
   totalCacheTokens: bigint('total_cache_tokens', { mode: 'number' }).default(0).notNull(),
   estimatedCostUsd: numeric('estimated_cost_usd', { precision: 12, scale: 4 }).default('0').notNull(),
 }, (table) => [
-  index('idx_daily_stats_owner').on(table.ownerId, table.day),
+  uniqueIndex('idx_daily_stats_unique').on(table.day, table.machineId, table.sourceTool, table.model),
   index('idx_daily_stats_day').on(table.day),
 ]);
 

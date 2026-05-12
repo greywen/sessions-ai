@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { db } from '@/lib/db';
-import { normalizedMessages, machines, users, sessionFavorites } from '@/lib/db/schema';
+import { normalizedMessages, machines, sessionFavorites } from '@/lib/db/schema';
 import { getSession } from '@/lib/auth/session';
 import { logger } from '@/lib/logger';
 import { sql, eq, and, gte, lte, desc, count, min, max, countDistinct, inArray } from 'drizzle-orm';
@@ -12,7 +12,6 @@ const querySchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(20),
   sourceTool: z.string().optional(),
   machineId: z.string().uuid().optional(),
-  userId: z.string().uuid().optional(),
   from: z.string().optional(),
   to: z.string().optional(),
   search: z.string().max(200).optional(),
@@ -63,7 +62,6 @@ export async function GET(request: Request) {
       limit: searchParams.get('limit') ?? undefined,
       sourceTool: searchParams.get('sourceTool') ?? undefined,
       machineId: searchParams.get('machineId') ?? undefined,
-      userId: searchParams.get('userId') ?? undefined,
       from: searchParams.get('from') ?? undefined,
       to: searchParams.get('to') ?? undefined,
       search: searchParams.get('search') ?? undefined,
@@ -79,23 +77,6 @@ export async function GET(request: Request) {
     }
     if (params.machineId) {
       conditions.push(eq(normalizedMessages.machineId, params.machineId));
-    }
-    if (params.userId) {
-      // Find the associated device from the user
-      const userMachines = await db
-        .select({ id: machines.id })
-        .from(machines)
-        .where(eq(machines.ownerId, params.userId));
-      const machineIds = userMachines.map((m) => m.id);
-      if (machineIds.length > 0) {
-        conditions.push(inArray(normalizedMessages.machineId, machineIds));
-      } else {
-        // This user does not have a device,Back to empty results
-        return NextResponse.json({
-          data: [],
-          pagination: { page: params.page, limit: params.limit, total: 0, totalPages: 0 },
-        });
-      }
     }
     if (params.from) {
       conditions.push(gte(normalizedMessages.rawTimestamp, new Date(params.from)));
@@ -180,11 +161,8 @@ export async function GET(request: Request) {
       ? await db.select({
           id: machines.id,
           displayName: machines.displayName,
-          ownerName: users.name,
-          ownerEmail: users.email,
         })
           .from(machines)
-          .leftJoin(users, eq(machines.ownerId, users.id))
           .where(inArray(machines.id, machineIds))
       : [];
 
@@ -201,12 +179,10 @@ export async function GET(request: Request) {
         `)
       : [];
 
-    let machineMap: Record<string, { displayName: string | null; ownerName: string | null; ownerEmail: string | null }> = {};
+    let machineMap: Record<string, { displayName: string | null }> = {};
     for (const row of machineRows) {
       machineMap[row.id] = {
         displayName: row.displayName,
-        ownerName: row.ownerName,
-        ownerEmail: row.ownerEmail,
       };
     }
 
@@ -221,8 +197,6 @@ export async function GET(request: Request) {
     const enrichedSessions = sessions.map((s) => ({
       ...s,
       deviceName: machineMap[s.machineId]?.displayName ?? null,
-      ownerName: machineMap[s.machineId]?.ownerName ?? null,
-      ownerEmail: machineMap[s.machineId]?.ownerEmail ?? null,
       firstUserMessage: firstMessageMap[s.sessionId] ?? null,
       sessionTitle: typeof s.sessionTitle === 'string' ? s.sessionTitle : null,
       isFavorite: s.isFavorite,

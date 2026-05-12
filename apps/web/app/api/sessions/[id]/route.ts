@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { db } from '@/lib/db';
-import { normalizedMessages, machines, users, sessionFavorites } from '@/lib/db/schema';
+import { normalizedMessages, machines, sessionFavorites } from '@/lib/db/schema';
 import { getSession } from '@/lib/auth/session';
 import { logger } from '@/lib/logger';
 import { eq, count, min, max, sql, and } from 'drizzle-orm';
@@ -12,7 +12,7 @@ const patchSchema = z.object({
 
 const TOKEN_NUMERIC_REGEX = '^[0-9]+([.][0-9]+)?$';
 
-function usageTokenAsNumeric(field: 'inputTokens' | 'outputTokens' | 'cacheReadInputTokens') {
+function usageTokenAsNumeric(field: 'inputTokens' | 'outputTokens' | 'cacheReadInputTokens' | 'cacheCreationInputTokens') {
   const usageValue = sql.raw(`usage->>'${field}'`);
   return sql`
     CASE
@@ -62,22 +62,20 @@ export async function GET(
     const [machineInfo] = await db
       .select({
         displayName: machines.displayName,
-        ownerName: users.name,
-        ownerEmail: users.email,
       })
       .from(machines)
-      .leftJoin(users, eq(machines.ownerId, users.id))
       .where(eq(machines.id, metadata.machineId));
 
     const inputTokensExpr = usageTokenAsNumeric('inputTokens');
     const outputTokensExpr = usageTokenAsNumeric('outputTokens');
-    const cacheTokensExpr = usageTokenAsNumeric('cacheReadInputTokens');
+    const cacheReadExpr = usageTokenAsNumeric('cacheReadInputTokens');
+    const cacheWriteExpr = usageTokenAsNumeric('cacheCreationInputTokens');
 
     const [tokenStats] = await db.execute(sql`
       SELECT
         COALESCE(SUM(${inputTokensExpr}), 0)::text as total_input_tokens,
         COALESCE(SUM(${outputTokensExpr}), 0)::text as total_output_tokens,
-        COALESCE(SUM(${cacheTokensExpr}), 0)::text as total_cache_tokens,
+        COALESCE(SUM(${cacheReadExpr} + ${cacheWriteExpr}), 0)::text as total_cache_tokens,
         COALESCE(SUM(cost_usd), 0)::text as total_cost
       FROM normalized_messages
       WHERE session_id = ${sessionId}
@@ -118,8 +116,6 @@ export async function GET(
         sessionTitle,
         isFavorite: !!favoriteRow,
         deviceName: machineInfo?.displayName ?? null,
-        ownerName: machineInfo?.ownerName ?? null,
-        ownerEmail: machineInfo?.ownerEmail ?? null,
         totalInputTokens: Number(tokenStats?.total_input_tokens ?? 0),
         totalOutputTokens: Number(tokenStats?.total_output_tokens ?? 0),
         totalCacheTokens: Number(tokenStats?.total_cache_tokens ?? 0),

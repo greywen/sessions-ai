@@ -13,7 +13,6 @@ export interface AgentContext {
     id: string;
     fingerprint: string;
     status: string;
-    ownerId: string | null;
   };
 }
 
@@ -60,7 +59,6 @@ export async function authenticateAgent(request: Request): Promise<AgentContext 
       id: machine.id,
       fingerprint: machine.fingerprint,
       status: machine.status,
-      ownerId: machine.ownerId,
     },
   };
 }

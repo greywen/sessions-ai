@@ -289,14 +289,27 @@ export class CursorParser implements ToolParser {
           }),
         );
       } else {
-        const result = typeof tool.result === 'string' ? tool.result : '';
-        const block: ContentBlock = {
+        // ToolCall block — input only. Result goes into a separate
+        // ToolOutput block so we never have to mash structured input and
+        // textual output into the same `content` field.
+        blocks.push({
           ...emptyBlock('ToolCall'),
-          content: result.length > 4000 ? `${result.slice(0, 4000)}\n…[truncated]` : result || `Tool: ${tool.name}`,
+          content: `Tool: ${tool.name}`,
           toolName: tool.name,
           toolInput: parsedInput,
-        };
-        blocks.push(block);
+        });
+        // ToolOutput block — preserves the FULL tool result text. This is
+        // an archive product: truncating user data at parse time defeats
+        // the entire purpose. The renderer is responsible for collapsing
+        // long output, not the parser.
+        const result = typeof tool.result === 'string' ? tool.result : '';
+        if (result.length > 0) {
+          blocks.push({
+            ...emptyBlock('ToolOutput'),
+            content: result,
+            toolName: tool.name,
+          });
+        }
       }
     }
 

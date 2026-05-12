@@ -11,11 +11,9 @@ const querySchema = z.object({
 });
 
 const patchSchema = z.object({
-  action: z.enum(['approve', 'disable', 'enable', 'assign_owner', 'update_name']),
-  ownerId: z.string().uuid().optional(),
+  action: z.enum(['approve', 'disable', 'enable', 'update_name']),
   displayName: z.string().min(1).max(255).optional(),
 }).refine((data) => {
-  if (data.action === 'assign_owner' && !data.ownerId) return false;
   if (data.action === 'update_name' && !data.displayName) return false;
   return true;
 }, { message: 'Missing required parameters' });
@@ -24,7 +22,6 @@ const VALID_TRANSITIONS: Record<string, string[]> = {
   approve: ['pending'],
   disable: ['active'],
   enable: ['disabled'],
-  assign_owner: ['pending', 'active', 'disabled'],
   update_name: ['pending', 'active', 'disabled'],
 };
 
@@ -83,19 +80,6 @@ describe('Equipment Management API Schema Correction', () => {
       expect(result.success).toBe(true);
     });
 
-    it('Acceptable assign_owner Aksi（Bawa ownerId）', () => {
-      const result = patchSchema.safeParse({
-        action: 'assign_owner',
-        ownerId: '550e8400-e29b-41d4-a716-446655440000',
-      });
-      expect(result.success).toBe(true);
-    });
-
-    it('Should be rejected assign_owner Aksi（N/A ownerId）', () => {
-      const result = patchSchema.safeParse({ action: 'assign_owner' });
-      expect(result.success).toBe(false);
-    });
-
     it('Acceptable update_name Aksi（Bawa displayName）', () => {
       const result = patchSchema.safeParse({
         action: 'update_name',
@@ -128,10 +112,6 @@ describe('Equipment Management API Schema Correction', () => {
 
     it('enable Allow only from disabled Status', () => {
       expect(VALID_TRANSITIONS.enable).toEqual(['disabled']);
-    });
-
-    it('assign_owner Allow any state', () => {
-      expect(VALID_TRANSITIONS.assign_owner).toEqual(['pending', 'active', 'disabled']);
     });
 
     it('update_name Allow any state', () => {

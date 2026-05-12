@@ -28,7 +28,7 @@ export function CollapsibleThinking({ content }: CollapsibleThinkingProps) {
           </button>
         </CollapsibleTrigger>
         <CollapsibleContent>
-          <div className="px-3 pb-3 text-sm whitespace-pre-wrap text-muted-foreground">
+          <div className="px-3 pb-3 text-sm whitespace-pre-wrap break-words [overflow-wrap:anywhere] text-muted-foreground">
             {content}
           </div>
         </CollapsibleContent>

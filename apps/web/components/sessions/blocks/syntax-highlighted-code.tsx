@@ -62,11 +62,11 @@ export function SyntaxHighlightedCode({ code, language }: SyntaxHighlightedCodeP
       {/* Code Content */}
       {html ? (
         <div
-          className="overflow-x-auto text-sm [&>pre]:m-0 [&>pre]:bg-transparent [&>pre]:p-4"
+          className="text-sm [&>pre]:m-0 [&>pre]:bg-transparent [&>pre]:p-4 [&>pre]:whitespace-pre-wrap [&>pre]:break-words [&>pre]:[overflow-wrap:anywhere] [&_code]:whitespace-pre-wrap [&_code]:break-words [&_code]:[overflow-wrap:anywhere]"
           dangerouslySetInnerHTML={{ __html: html }}
         />
       ) : (
-        <pre className="overflow-x-auto bg-card p-4 text-sm text-foreground/90">
+        <pre className="whitespace-pre-wrap break-words [overflow-wrap:anywhere] bg-card p-4 text-sm text-foreground/90">
           <code>{code}</code>
         </pre>
       )}

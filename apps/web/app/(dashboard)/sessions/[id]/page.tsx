@@ -14,6 +14,7 @@ import type { ContentBlock, TokenUsage } from '@sessions-ai/shared';
 import { format } from 'date-fns';
 import { ContentBlockRenderer } from '@/components/sessions/content-block-renderer';
 import { TokenUsageBar } from '@/components/sessions/token-usage-bar';
+import { MessageMetaBadges } from '@/components/sessions/message-meta-badges';
 import { ModelLogo, ToolLogo, getToolLabel } from '@/components/branding/ai-logo';
 import { useI18n } from '@/lib/i18n/provider';
 import { dateFnsLocale } from '@/lib/i18n/date-locale';
@@ -28,8 +29,6 @@ interface SessionMeta {
   firstMessageAt: string;
   lastMessageAt: string;
   deviceName: string | null;
-  ownerName: string | null;
-  ownerEmail: string | null;
   totalInputTokens: number;
   totalOutputTokens: number;
   totalCacheTokens: number;
@@ -304,7 +303,6 @@ export default function SessionDetailPage({ params }: { params: Promise<{ id: st
         </div>
         {meta && (
           <div className="flex flex-wrap items-center gap-2 sm:gap-4 text-xs sm:text-sm text-muted-foreground ml-0 sm:ml-12 mt-2 sm:mt-0">
-            {meta.ownerName && <span>@{meta.ownerName}</span>}
             {meta.deviceName && <span>{meta.deviceName}</span>}
             <span className="flex items-center gap-1">
               <MessageSquare className="h-3.5 w-3.5" />
@@ -362,7 +360,7 @@ export default function SessionDetailPage({ params }: { params: Promise<{ id: st
                         👤
                       </div>
                       <div className="min-w-0 flex-1">
-                        <div className="text-sm">
+                        <div className="text-sm break-words [overflow-wrap:anywhere]">
                           {msg.contentBlocks?.map((block, i) => (
                             <ContentBlockRenderer key={i} block={block} />
                           ))}
@@ -387,7 +385,6 @@ export default function SessionDetailPage({ params }: { params: Promise<{ id: st
                     <Card className="border-border/70 bg-muted/20">
                       <CardContent className="py-3">
                         <div className="mb-2 flex items-center gap-2 text-xs text-muted-foreground">
-                          <ToolLogo tool={msg.sourceTool} size={16} />
                           {msg.usage?.model && (
                             <Badge variant="outline" className="px-1.5 py-0 text-xs">
                               <ModelLogo model={msg.usage.model} size={14} />
@@ -407,7 +404,8 @@ export default function SessionDetailPage({ params }: { params: Promise<{ id: st
                             <Star className={`h-3.5 w-3.5 ${msg.isFavorite ? 'fill-amber-400 text-amber-500' : 'text-muted-foreground'}`} />
                           </Button>
                         </div>
-                        <div className="space-y-2">
+                        {msg.metadata && <MessageMetaBadges metadata={msg.metadata} />}
+                        <div className="space-y-2 break-words [overflow-wrap:anywhere]">
                           {msg.contentBlocks?.map((block, i) => (
                             <ContentBlockRenderer key={i} block={block} />
                           ))}
@@ -416,7 +414,7 @@ export default function SessionDetailPage({ params }: { params: Promise<{ id: st
                       </CardContent>
                     </Card>
                   ) : (
-                    <div className="pl-11 text-sm text-muted-foreground">
+                    <div className="pl-11 text-sm text-muted-foreground break-words [overflow-wrap:anywhere]">
                       {msg.contentBlocks?.map((block, i) => (
                         <ContentBlockRenderer key={i} block={block} />
                       ))}

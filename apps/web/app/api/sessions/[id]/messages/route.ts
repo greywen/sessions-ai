@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { db } from '@/lib/db';
-import { normalizedMessages, messageFavorites } from '@/lib/db/schema';
+import { normalizedMessages, favoriteSnapshots } from '@/lib/db/schema';
 import { getSession } from '@/lib/auth/session';
 import { logger } from '@/lib/logger';
 import { and, asc, desc, eq, gt, lt, sql } from 'drizzle-orm';
@@ -90,10 +90,10 @@ export async function GET(
     }
 
     if (queryParams.compact !== 'true' && queryParams.lite !== 'true' && queryParams.favorite === 'true') {
-      conditions.push(sql`${messageFavorites.id} IS NOT NULL`);
+      conditions.push(sql`${favoriteSnapshots.id} IS NOT NULL`);
     }
     if (queryParams.compact !== 'true' && queryParams.lite !== 'true' && queryParams.favorite === 'false') {
-      conditions.push(sql`${messageFavorites.id} IS NULL`);
+      conditions.push(sql`${favoriteSnapshots.id} IS NULL`);
     }
 
     const orderBy = isDesc
@@ -175,14 +175,14 @@ export async function GET(
         rawTimestamp: normalizedMessages.rawTimestamp,
         metadata: normalizedMessages.metadata,
         createdAt: normalizedMessages.createdAt,
-        isFavorite: sql<boolean>`${messageFavorites.id} IS NOT NULL`.as('is_favorite'),
+        isFavorite: sql<boolean>`${favoriteSnapshots.id} IS NOT NULL`.as('is_favorite'),
       })
       .from(normalizedMessages)
       .leftJoin(
-        messageFavorites,
+        favoriteSnapshots,
         and(
-          eq(messageFavorites.messageId, normalizedMessages.id),
-          eq(messageFavorites.userId, session.userId),
+          eq(favoriteSnapshots.sourceMessageId, normalizedMessages.id),
+          eq(favoriteSnapshots.userId, session.userId),
         ),
       )
       .where(and(...conditions))
