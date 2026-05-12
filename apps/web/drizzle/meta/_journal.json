@@ -36,6 +36,13 @@
       "when": 1777400100000,
       "tag": "0004_session_message_favorites",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1778540151000,
+      "tag": "0005_full_message_source_payload",
+      "breakpoints": true
     }
   ]
 }

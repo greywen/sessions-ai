@@ -14,6 +14,7 @@ import {
   type NormalizedFileEdit,
 } from './edit-normalizer.ts';
 import { logger } from '../logger.ts';
+import { sourcePayload } from './source-payload.ts';
 
 /**
  * UUID namespace. Version changes will alter all derived UUIDs (forced rebuild).
@@ -156,7 +157,17 @@ interface ParsedMsg {
   tokens: { input: number; output: number; cacheRead: number | null; cacheWrite: number | null } | null;
   cost: number | null;
   parts: Record<string, unknown>[];
+  rawMessageData: Record<string, unknown>;
+  rawMessageRaw: string;
+  rawParts: OpenCodePartPayload[];
   sessionTitle: string | null;
+}
+
+interface OpenCodePartPayload {
+  messageId: string;
+  timeCreated: number;
+  data: Record<string, unknown>;
+  rawData: string;
 }
 
 export class OpenCodeParser implements ToolParser {
@@ -271,7 +282,7 @@ export class OpenCodeParser implements ToolParser {
   private parseMsg(
     row: MsgRow,
     sessionTitles: Map<string, string>,
-    parts: Record<string, unknown>[],
+    rawParts: OpenCodePartPayload[],
   ): ParsedMsg | null {
     let data: Record<string, unknown>;
     try {
@@ -307,12 +318,15 @@ export class OpenCodeParser implements ToolParser {
       modelId,
       tokens,
       cost,
-      parts,
+      parts: rawParts.map((part) => part.data),
+      rawMessageData: data,
+      rawMessageRaw: row.data,
+      rawParts,
       sessionTitle: sessionTitles.get(row.session_id) ?? null,
     };
   }
 
-  private toUnifiedMessage(p: ParsedMsg): UnifiedMessage {
+  private toUnifiedMessage(p: ParsedMsg, filePath: string): UnifiedMessage {
     const role: MessageRole = (() => {
       switch (p.role) {
         case 'user':
@@ -425,6 +439,29 @@ export class OpenCodeParser implements ToolParser {
       usage,
       timestamp: millisToIso(p.timeCreated),
       metadata,
+      sourcePayload: sourcePayload({
+        format: 'opencode.sqlite.message.v1',
+        sourcePath: filePath,
+        sourceSessionId: p.sessionId,
+        sourceMessageId: p.id,
+        records: [
+          {
+            table: 'message',
+            row: {
+              id: p.id,
+              session_id: p.sessionId,
+              time_created: p.timeCreated,
+              time_updated: p.timeUpdated,
+              data: p.rawMessageData,
+              rawData: p.rawMessageRaw,
+            },
+          },
+          ...p.rawParts.map((part) => ({
+            table: 'part',
+            row: part,
+          })),
+        ],
+      }),
     };
   }
 
@@ -477,7 +514,7 @@ export class OpenCodeParser implements ToolParser {
       const visibleRows = msgRows.filter((r) => !subSessionIds.has(r.session_id));
 
       // Load all parts (including appended ones) for messages in this window.
-      const partsByMsg = new Map<string, Record<string, unknown>[]>();
+      const partsByMsg = new Map<string, OpenCodePartPayload[]>();
       if (hasPart && visibleRows.length > 0) {
         const ids = visibleRows.map((r) => r.id);
         const chunkSize = 200; // Avoid SQL variable-count limits.
@@ -499,7 +536,12 @@ export class OpenCodeParser implements ToolParser {
               continue;
             }
             const arr = partsByMsg.get(r.message_id) ?? [];
-            arr.push(parsed);
+            arr.push({
+              messageId: r.message_id,
+              timeCreated: r.time_created,
+              data: parsed,
+              rawData: r.data,
+            });
             partsByMsg.set(r.message_id, arr);
           }
         }
@@ -516,7 +558,7 @@ export class OpenCodeParser implements ToolParser {
         const parts = partsByMsg.get(r.id) ?? [];
         const parsed = this.parseMsg(r, sessionTitles, parts);
         if (!parsed) continue;
-        messages.push(this.toUnifiedMessage(parsed));
+        messages.push(this.toUnifiedMessage(parsed, filePath));
       }
 
       logger.debug(

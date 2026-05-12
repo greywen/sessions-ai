@@ -33,6 +33,7 @@ const messageSchema = z.object({
   usage: tokenUsageSchema.nullable().optional(),
   timestamp: z.string().min(1),
   metadata: z.record(z.string(), z.unknown()).optional(),
+  sourcePayload: z.record(z.string(), z.unknown()).nullable().optional(),
 });
 
 const ingestPayloadSchema = z.array(messageSchema).min(1).max(200);
@@ -63,6 +64,10 @@ describe('Ingest API Schema Correction', () => {
         usage: null,
         timestamp: '2026-04-03T10:00:00Z',
         metadata: {},
+        sourcePayload: {
+          formatVersion: 1,
+          records: [{ id: 'raw-msg-001', content: 'Hello.' }],
+        },
       },
     ];
 

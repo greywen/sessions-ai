@@ -17,6 +17,7 @@ import {
   diffFromHunks,
   type NormalizedFileEdit,
 } from './edit-normalizer.ts';
+import { sourcePayload } from './source-payload.ts';
 
 const COPILOT_NS = 'copilot-ns-v1';
 
@@ -81,6 +82,8 @@ interface ChatModel {
 interface SessionContext {
   uuid: string;
   rawId: string;
+  sourcePath: string;
+  sourceFile: string;
   customTitle: string | null;
   initialLocation: string | null;
   responderUsername: string | null;
@@ -647,6 +650,14 @@ export class CopilotParser implements ToolParser {
       usage: null,
       timestamp: new Date(ts).toISOString(),
       metadata: { ...sharedMeta },
+      sourcePayload: sourcePayload({
+        format: 'github-copilot.chat-session.request.v1',
+        sourcePath: ctx.sourcePath,
+        sourceFile: ctx.sourceFile,
+        sourceSessionId: ctx.rawId,
+        sourceMessageId: reqId,
+        records: [{ role: 'user', request: req }],
+      }),
     };
 
     const blocks = this.responseToBlocks(Array.isArray(req.response) ? req.response : []);
@@ -662,6 +673,14 @@ export class CopilotParser implements ToolParser {
       usage: this.extractUsage(),
       timestamp: new Date(asstTs).toISOString(),
       metadata: { ...sharedMeta },
+      sourcePayload: sourcePayload({
+        format: 'github-copilot.chat-session.request.v1',
+        sourcePath: ctx.sourcePath,
+        sourceFile: ctx.sourceFile,
+        sourceSessionId: ctx.rawId,
+        sourceMessageId: reqId,
+        records: [{ role: 'assistant', request: req }],
+      }),
     };
 
     return [userMsg, asstMsg];
@@ -712,6 +731,8 @@ export class CopilotParser implements ToolParser {
     const ctx: SessionContext = {
       uuid: toUuidV5(`session:${fname}`),
       rawId: fname,
+      sourcePath: filePath,
+      sourceFile: basename(filePath),
       customTitle:
         typeof state.customTitle === 'string' && state.customTitle.length > 0
           ? state.customTitle

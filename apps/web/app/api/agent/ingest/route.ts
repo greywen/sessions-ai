@@ -38,6 +38,7 @@ const messageSchema = z.object({
   usage: tokenUsageSchema.nullable().optional(),
   timestamp: z.string().min(1),
   metadata: z.record(z.string(), z.unknown()).optional(),
+  sourcePayload: z.record(z.string(), z.unknown()).nullable().optional(),
 });
 
 const ingestPayloadSchema = z.array(messageSchema).min(1).max(200);
@@ -110,6 +111,7 @@ export async function POST(request: Request) {
           costUsd,
           rawTimestamp: ts,
           metadata: m.metadata ?? {},
+          sourcePayload: m.sourcePayload ?? null,
         };
       });
 
@@ -129,6 +131,7 @@ export async function POST(request: Request) {
               costUsd: sql`excluded.cost_usd`,
               rawTimestamp: sql`excluded.raw_timestamp`,
               metadata: sql`excluded.metadata`,
+              sourcePayload: sql`excluded.source_payload`,
             },
           });
         accepted += batch.length;

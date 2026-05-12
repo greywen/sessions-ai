@@ -20,6 +20,7 @@ import {
   type FileEditMeta,
   type NormalizedFileEdit,
 } from './edit-normalizer.ts';
+import { sourcePayload } from './source-payload.ts';
 
 const CLAUDE_NS = 'claude-code-ns-v1';
 
@@ -50,8 +51,8 @@ function emptyBlock(type: ContentBlockType = 'Text', content = ''): ContentBlock
   };
 }
 
-function truncate(input: string, limit = 4000): string {
-  return input.length > limit ? `${input.slice(0, limit)}\n...[truncated]` : input;
+function preserveFullText(input: string): string {
+  return input;
 }
 
 function asObject(value: unknown): Record<string, unknown> | null {
@@ -366,7 +367,7 @@ function parseClaudeBlocks(
         setEditStatus(linked.fileEditBlocks, isError ? 'failed' : 'applied');
         if (isError) {
           result.blocks.push({
-            ...emptyBlock('Error', truncate(contentText)),
+            ...emptyBlock('Error', preserveFullText(contentText)),
             toolName: name,
             toolInput: linked.input,
           });
@@ -376,7 +377,7 @@ function parseClaudeBlocks(
       }
 
       result.blocks.push({
-        ...emptyBlock(isError ? 'Error' : resultBlockTypeForToolName(name), truncate(contentText)),
+        ...emptyBlock(isError ? 'Error' : resultBlockTypeForToolName(name), preserveFullText(contentText)),
         toolName: name,
         toolInput: linked?.input ?? null,
       });
@@ -617,7 +618,7 @@ export class ClaudeCodeParser implements ToolParser {
         if (parsed.blocks.length === 0) {
           const fallback = stringifyToolUseResult(r.parsedLine.toolUseResult);
           if (fallback.length > 0) {
-            parsed.blocks.push(emptyBlock('ToolOutput', truncate(fallback)));
+            parsed.blocks.push(emptyBlock('ToolOutput', preserveFullText(fallback)));
             parsed.hasToolResult = true;
           }
         }
@@ -677,6 +678,19 @@ export class ClaudeCodeParser implements ToolParser {
           return tsMs > 0 ? new Date(tsMs).toISOString() : new Date().toISOString();
         })(),
         metadata,
+        sourcePayload: sourcePayload({
+          format: 'claude-code.jsonl.message.v1',
+          sourcePath: filePath,
+          sourceFile: basename(filePath),
+          sourceSessionId,
+          sourceMessageId: g.msgId ?? head.rawUuid,
+          records: g.records.map((r) => ({
+            rawUuid: r.rawUuid,
+            parentRawUuid: r.parentRawUuid,
+            lineEndByte: r.lineEndByte,
+            line: r.parsedLine,
+          })),
+        }),
       });
     }
 

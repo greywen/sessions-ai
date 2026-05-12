@@ -54,6 +54,11 @@ export interface ContentBlock {
   isCollapsed: boolean;
 }
 
+// Original source-platform payload kept for restore/export workflows.
+// `contentBlocks` stays optimized for display; this field is the lossless-ish
+// archive material emitted by each parser.
+export type SourcePayload = Record<string, unknown>;
+
 // Unified Messaging Structure
 export interface UnifiedMessage {
   id: string;
@@ -66,6 +71,7 @@ export interface UnifiedMessage {
   usage: TokenUsage | null;
   timestamp: string; // UTC ISO 8601
   metadata: Record<string, unknown>;
+  sourcePayload?: SourcePayload | null;
 }
 
 // Device Status

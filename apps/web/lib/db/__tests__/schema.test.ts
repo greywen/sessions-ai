@@ -39,6 +39,7 @@ describe('Database Schema Definition', () => {
     expect(columns).toContain('sourceTool');
     expect(columns).toContain('role');
     expect(columns).toContain('contentBlocks');
+    expect(columns).toContain('sourcePayload');
   });
 
   it('sessionFavorites The table should have favorite related fields', () => {
@@ -63,6 +64,7 @@ describe('Database Schema Definition', () => {
     expect(columns).toContain('contentBlocks');
     expect(columns).toContain('usage');
     expect(columns).toContain('metadata');
+    expect(columns).toContain('sourcePayload');
     expect(columns).toContain('rawTimestamp');
     // User affordances
     expect(columns).toContain('userNote');

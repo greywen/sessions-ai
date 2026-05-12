@@ -20,6 +20,7 @@ import {
   type NormalizedFileEdit,
 } from './edit-normalizer.ts';
 import { logger } from '../logger.ts';
+import { sourcePayload } from './source-payload.ts';
 
 /**
  * Gemini CLI parser.
@@ -89,8 +90,8 @@ function stringifyUnknown(value: unknown): string {
   }
 }
 
-function truncate(input: string, limit = 4000): string {
-  return input.length > limit ? `${input.slice(0, limit)}\n...[truncated]` : input;
+function preserveFullText(input: string): string {
+  return input;
 }
 
 function toSafeNumber(value: unknown): number {
@@ -291,7 +292,7 @@ function convertPart(part: unknown): ContentBlock | null {
     const name = asStringOrNull(p.functionResponse.name) ?? 'unknown';
     const output = asStringOrNull(p.functionResponse.response?.output) ?? stringifyUnknown(p.functionResponse.response);
     return {
-      ...emptyBlock(classifyToolName(name), truncate(output)),
+      ...emptyBlock(classifyToolName(name), preserveFullText(output)),
       toolName: mapGeminiToolName(name),
     };
   }
@@ -363,7 +364,7 @@ function convertToolCalls(toolCalls: unknown): ContentBlock[] {
       const text = extractToolResultText(tc.result);
       if (text.length > 0) {
         out.push({
-          ...emptyBlock(classifyToolName(name), truncate(text)),
+          ...emptyBlock(classifyToolName(name), preserveFullText(text)),
           toolName: mapGeminiToolName(name),
         });
       }
@@ -560,6 +561,7 @@ export class GeminiCliParser implements ToolParser {
     converted: ConvertedRow,
     timestamp: string,
     extraMetadata: Record<string, unknown> = {},
+    sourcePayloadValue: Record<string, unknown> | null = null,
   ): UnifiedMessage {
     return {
       id: toUuidV5(`gemini:${sourceSessionId}:${sourceMessageId}`),
@@ -575,6 +577,7 @@ export class GeminiCliParser implements ToolParser {
         sourceSessionId,
         ...extraMetadata,
       },
+      sourcePayload: sourcePayloadValue,
     };
   }
 
@@ -662,7 +665,15 @@ export class GeminiCliParser implements ToolParser {
       messages.push(this.buildMessage(sourceSessionId, sourceMessageId, converted, timestamp, {
         projectName,
         sourceFile,
-      }));
+      }, sourcePayload({
+        format: 'gemini-cli.session-jsonl.row.v1',
+        sourcePath: filePath,
+        sourceFile,
+        sourceSessionId,
+        sourceMessageId,
+        records: [{ line: row }],
+        extra: { projectName },
+      })));
     }
 
     return { messages, newOffset: st.size };
@@ -713,7 +724,15 @@ export class GeminiCliParser implements ToolParser {
         this.buildMessage(sourceSessionId, sourceMessageId, converted, timestamp, {
           projectName,
           sourceFile,
-        }),
+        }, sourcePayload({
+          format: 'gemini-cli.session-json.message.v1',
+          sourcePath: filePath,
+          sourceFile,
+          sourceSessionId,
+          sourceMessageId,
+          records: [{ message: row }],
+          extra: { projectName },
+        })),
       );
     }
 
@@ -792,7 +811,7 @@ export class GeminiCliParser implements ToolParser {
             blocks.push(buildFileEditBlock(edit, { toolName, toolInput: args }));
           } else {
             blocks.push({
-              ...emptyBlock(classifyToolName(toolName), truncate(result || `Tool: ${toolName}`)),
+              ...emptyBlock(classifyToolName(toolName), preserveFullText(result || `Tool: ${toolName}`)),
               toolName: mapGeminiToolName(toolName),
               toolInput: args,
             });
@@ -824,6 +843,15 @@ export class GeminiCliParser implements ToolParser {
         usage: null,
         timestamp,
         metadata: { projectName, sourceFile: basename(filePath), sourceSessionId, legacy: true },
+        sourcePayload: sourcePayload({
+          format: 'gemini-cli.legacy-logs.entry.v1',
+          sourcePath: filePath,
+          sourceFile: basename(filePath),
+          sourceSessionId,
+          sourceMessageId,
+          records: [{ index: i, entry: e }],
+          extra: { projectName, legacy: true },
+        }),
       });
     }
 

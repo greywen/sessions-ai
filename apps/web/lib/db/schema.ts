@@ -56,6 +56,7 @@ export const normalizedMessages = pgTable('normalized_messages', {
   costUsd: numeric('cost_usd', { precision: 12, scale: 6 }).default('0').notNull(),
   rawTimestamp: timestamp('raw_timestamp', { withTimezone: true }).notNull(),
   metadata: jsonb('metadata'),
+  sourcePayload: jsonb('source_payload'),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [
   index('idx_nm_machine_time').on(table.machineId, table.createdAt),
@@ -103,6 +104,7 @@ export const favoriteSnapshots = pgTable('favorite_snapshots', {
   contentBlocks: jsonb('content_blocks').notNull(),
   usage: jsonb('usage'),
   metadata: jsonb('metadata'),
+  sourcePayload: jsonb('source_payload'),
   rawTimestamp: timestamp('raw_timestamp', { withTimezone: true }).notNull(),
   // User's free-form note attached to the favorite.
   userNote: text('user_note'),

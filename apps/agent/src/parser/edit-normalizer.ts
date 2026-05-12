@@ -57,8 +57,6 @@ export interface BuildBlockOptions {
   gitBranch?: string | null;
 }
 
-const DIFF_TRUNCATE_LIMIT = 16000;
-
 function isString(v: unknown): v is string {
   return typeof v === 'string';
 }
@@ -104,11 +102,7 @@ export function diffFromOldNew(
   const body: string[] = [];
   for (const l of oldLines) body.push(`-${l}`);
   for (const l of newLines) body.push(`+${l}`);
-  const out = [...header, ...body].join('\n');
-  if (out.length > DIFF_TRUNCATE_LIMIT) {
-    return `${out.slice(0, DIFF_TRUNCATE_LIMIT)}\n…[diff truncated]`;
-  }
-  return out;
+  return [...header, ...body].join('\n');
 }
 
 /**
@@ -132,11 +126,7 @@ export function diffFromHunks(
     for (const l of oldLines) sections.push(`-${l}`);
     for (const l of newLines) sections.push(`+${l}`);
   }
-  const out = sections.join('\n');
-  if (out.length > DIFF_TRUNCATE_LIMIT) {
-    return `${out.slice(0, DIFF_TRUNCATE_LIMIT)}\n…[diff truncated]`;
-  }
-  return out;
+  return sections.join('\n');
 }
 
 /**

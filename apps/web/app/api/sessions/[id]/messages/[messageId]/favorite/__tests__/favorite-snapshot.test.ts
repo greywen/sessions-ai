@@ -69,6 +69,7 @@ vi.mock('@/lib/db/schema', () => ({
     contentBlocks: 'nm.content_blocks',
     usage: 'nm.usage',
     metadata: 'nm.metadata',
+    sourcePayload: 'nm.source_payload',
     rawTimestamp: 'nm.raw_timestamp',
   },
   favoriteSnapshots: {
@@ -111,6 +112,10 @@ const FROZEN_MESSAGE = {
   ],
   usage: { inputTokens: 10, outputTokens: 20, model: 'claude-sonnet-4' },
   metadata: { sourceComposerId: 'cmp-1', model: 'claude-sonnet-4' },
+  sourcePayload: {
+    formatVersion: 1,
+    records: [{ bubbleId: 'bubble-1', text: 'frozen text payload' }],
+  },
   rawTimestamp: new Date('2026-04-01T12:00:00Z'),
 };
 
@@ -166,6 +171,7 @@ describe('PATCH /api/sessions/[id]/messages/[messageId]/favorite — snapshot se
     expect(written.contentBlocks).toEqual(FROZEN_MESSAGE.contentBlocks);
     expect(written.usage).toEqual(FROZEN_MESSAGE.usage);
     expect(written.metadata).toEqual(FROZEN_MESSAGE.metadata);
+    expect(written.sourcePayload).toEqual(FROZEN_MESSAGE.sourcePayload);
     expect(written.rawTimestamp).toBe(FROZEN_MESSAGE.rawTimestamp);
     expect(written.userNote).toBe('remember this');
 
@@ -173,6 +179,7 @@ describe('PATCH /api/sessions/[id]/messages/[messageId]/favorite — snapshot se
     expect(mockOnConflictDoUpdate).toHaveBeenCalledTimes(1);
     const conflict = mockOnConflictDoUpdate.mock.calls[0][0] as { set: Record<string, unknown> };
     expect(conflict.set.contentBlocks).toEqual(FROZEN_MESSAGE.contentBlocks);
+    expect(conflict.set.sourcePayload).toEqual(FROZEN_MESSAGE.sourcePayload);
     expect(conflict.set.userNote).toBe('remember this');
   });
 

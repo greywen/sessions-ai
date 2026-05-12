@@ -20,6 +20,7 @@ import {
   type NormalizedFileEdit,
 } from './edit-normalizer.ts';
 import { logger } from '../logger.ts';
+import { sourcePayload } from './source-payload.ts';
 
 /** Tool names Cursor uses for file mutations. */
 const CURSOR_EDIT_TOOLS = new Set([
@@ -257,9 +258,9 @@ export class CursorParser implements ToolParser {
    * carries no presentable content.
    */
   private buildMessage(
+    filePath: string,
     composerId: string,
-    composerName: string | null,
-    composerModel: string | null,
+    composer: { name: string | null; model: string | null; raw: ComposerData | null },
     bubble: BubbleData,
   ): UnifiedMessage | null {
     const text = bubble.text && bubble.text.length > 0
@@ -317,7 +318,7 @@ export class CursorParser implements ToolParser {
 
     const role: MessageRole = bubble.type === 1 ? 'User' : 'Assistant';
     const ts = bubbleTimestamp(bubble);
-    const model = bubble.modelInfo?.modelName ?? composerModel ?? 'unknown';
+    const model = bubble.modelInfo?.modelName ?? composer.model ?? 'unknown';
 
     const usage = bubble.tokenCount
       ? {
@@ -334,7 +335,7 @@ export class CursorParser implements ToolParser {
       sourceBubbleId: bubble.bubbleId,
       model,
     };
-    if (composerName) metadata.sessionTitle = composerName;
+    if (composer.name) metadata.sessionTitle = composer.name;
     if (bubble.requestId) metadata.requestId = bubble.requestId;
 
     return {
@@ -348,6 +349,19 @@ export class CursorParser implements ToolParser {
       usage,
       timestamp: ts > 0 ? new Date(ts).toISOString() : new Date().toISOString(),
       metadata,
+      sourcePayload: sourcePayload({
+        format: 'cursor.cursorDiskKV.bubble.v1',
+        sourcePath: filePath,
+        sourceFile: basename(filePath),
+        sourceSessionId: composerId,
+        sourceMessageId: bubble.bubbleId,
+        records: [{
+          composerKey: `composerData:${composerId}`,
+          composer: composer.raw,
+          bubbleKey: `bubbleId:${composerId}:${bubble.bubbleId}`,
+          bubble,
+        }],
+      }),
     };
   }
 
@@ -379,13 +393,14 @@ export class CursorParser implements ToolParser {
         )
         .all();
 
-      const composers = new Map<string, { name: string | null; model: string | null }>();
+      const composers = new Map<string, { name: string | null; model: string | null; raw: ComposerData | null }>();
       for (const row of composerRows) {
         try {
           const data = JSON.parse(this.toUtf8(row.value)) as ComposerData;
           composers.set(data.composerId, {
             name: data.name ?? null,
             model: data.modelConfig?.modelName ?? null,
+            raw: data,
           });
         } catch {
           // ignore corrupted composer
@@ -415,8 +430,8 @@ export class CursorParser implements ToolParser {
         const ts = bubbleTimestamp(data);
         if (ts > newOffset) newOffset = ts;
         if (ts <= offset) continue;
-        const meta = composers.get(composerId) ?? { name: null, model: null };
-        const msg = this.buildMessage(composerId, meta.name, meta.model, data);
+        const meta = composers.get(composerId) ?? { name: null, model: null, raw: null };
+        const msg = this.buildMessage(filePath, composerId, meta, data);
         if (msg) messages.push(msg);
       }
 

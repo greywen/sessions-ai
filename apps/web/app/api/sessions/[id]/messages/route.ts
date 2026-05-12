@@ -48,6 +48,7 @@ const querySchema = z.object({
   favorite: z.enum(['true', 'false']).optional(),
   compact: z.enum(['true', 'false']).optional(),
   lite: z.enum(['true', 'false']).optional(),
+  includeSource: z.enum(['true', 'false']).optional(),
 });
 
 // GET /api/sessions/[id]/messages
@@ -72,6 +73,7 @@ export async function GET(
       favorite: searchParams.get('favorite') ?? undefined,
       compact: searchParams.get('compact') ?? undefined,
       lite: searchParams.get('lite') ?? undefined,
+      includeSource: searchParams.get('includeSource') ?? undefined,
     });
 
     const startTime = Date.now();
@@ -174,6 +176,9 @@ export async function GET(
         usage: normalizedMessages.usage,
         rawTimestamp: normalizedMessages.rawTimestamp,
         metadata: normalizedMessages.metadata,
+        sourcePayload: queryParams.includeSource === 'true'
+          ? normalizedMessages.sourcePayload
+          : sql<null>`NULL`,
         createdAt: normalizedMessages.createdAt,
         isFavorite: sql<boolean>`${favoriteSnapshots.id} IS NOT NULL`.as('is_favorite'),
       })

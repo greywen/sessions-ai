@@ -107,6 +107,16 @@ describe('CursorParser - 解析 composer + bubbles', () => {
       operation: 'update',
       status: 'applied',
     });
+    expect(a.sourcePayload).toMatchObject({
+      format: 'cursor.cursorDiskKV.bubble.v1',
+      sourceSessionId: COMPOSER_ID,
+      sourceMessageId: BUBBLE_ASSI,
+    });
+    expect((a.sourcePayload?.records as Array<Record<string, unknown>>)[0]).toMatchObject({
+      composerKey: `composerData:${COMPOSER_ID}`,
+      bubbleKey: `bubbleId:${COMPOSER_ID}:${BUBBLE_ASSI}`,
+      bubble: { bubbleId: BUBBLE_ASSI, text: 'sure, here we go' },
+    });
 
     expect(r.newOffset).toBe(TS_ASSI);
   });

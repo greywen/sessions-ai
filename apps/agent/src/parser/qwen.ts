@@ -20,6 +20,7 @@ import {
   type NormalizedFileEdit,
 } from './edit-normalizer.ts';
 import { logger } from '../logger.ts';
+import { sourcePayload } from './source-payload.ts';
 
 const QWEN_NS = 'qwen-ns-v1';
 
@@ -50,8 +51,8 @@ function emptyBlock(type: ContentBlockType = 'Text', content = ''): ContentBlock
   };
 }
 
-function truncate(input: string, limit = 4000): string {
-  return input.length > limit ? `${input.slice(0, limit)}\n...[truncated]` : input;
+function preserveFullText(input: string): string {
+  return input;
 }
 
 function stringifyUnknown(value: unknown): string {
@@ -245,6 +246,7 @@ interface QoderAggregate {
   key: string;
   unifiedId: string;
   sourceSessionId: string;
+  sourceMessageId: string;
   parentRaw: string | null;
   role: MessageRole;
   timestampMs: number;
@@ -254,6 +256,7 @@ interface QoderAggregate {
   usage: TokenUsage | null;
   metadata: Record<string, unknown>;
   touchedAfterOffset: boolean;
+  sourceRecords: Array<{ lineNo: number; entry: QoderEntry }>;
 }
 
 interface PendingUsageEntry {
@@ -413,7 +416,7 @@ function parseQoderBlocks(
       const linked = toolUseId ? toolUseIndex.get(toolUseId) : undefined;
       const toolName = linked?.name ?? 'unknown';
       result.blocks.push({
-        ...emptyBlock(classifyToolName(toolName), truncate(stringifyUnknown(item.content))),
+        ...emptyBlock(classifyToolName(toolName), preserveFullText(stringifyUnknown(item.content))),
         toolName,
         toolInput: linked?.input ?? null,
       });
@@ -679,6 +682,7 @@ export class QwenCodeParser implements ToolParser {
           key,
           unifiedId: this.qoderUnifiedMessageId(sourceSessionId, sourceMessageId),
           sourceSessionId,
+          sourceMessageId,
           parentRaw: asString(entry.parentUuid),
           role,
           timestampMs: tsMs,
@@ -688,6 +692,7 @@ export class QwenCodeParser implements ToolParser {
           usage,
           metadata: this.buildQoderMetadata(entry, projectKey, sourceFile, sourceSessionId),
           touchedAfterOffset: touched,
+          sourceRecords: [{ lineNo, entry }],
         };
         aggregates.set(key, agg);
       } else {
@@ -709,6 +714,7 @@ export class QwenCodeParser implements ToolParser {
             ...this.buildQoderMetadata(entry, projectKey, sourceFile, sourceSessionId),
           };
         }
+        agg.sourceRecords.push({ lineNo, entry });
       }
 
       for (const block of parsedBlocks.blocks) {
@@ -739,6 +745,15 @@ export class QwenCodeParser implements ToolParser {
         usage: mergedUsage,
         timestamp: agg.timestampIso,
         metadata: agg.metadata,
+        sourcePayload: sourcePayload({
+          format: 'qoder.session-execution-jsonl.message.v1',
+          sourcePath: filePath,
+          sourceFile,
+          sourceSessionId: agg.sourceSessionId,
+          sourceMessageId: agg.sourceMessageId,
+          records: agg.sourceRecords,
+          extra: { projectKey },
+        }),
       };
 
       this.qoderMessageCache.set(agg.key, message);
@@ -930,7 +945,7 @@ export class QwenCodeParser implements ToolParser {
           );
         } else {
           blocks.push({
-            ...emptyBlock(classifyToolName(toolName), truncate(result || `Tool: ${toolName}`)),
+            ...emptyBlock(classifyToolName(toolName), preserveFullText(result || `Tool: ${toolName}`)),
             toolName,
             toolInput: entry.toolArgs ?? null,
           });
@@ -952,6 +967,15 @@ export class QwenCodeParser implements ToolParser {
         usage: null,
         timestamp: toIsoTimestamp(entry.timestamp),
         metadata: { projectHash, sourceSessionId: sessionRaw },
+        sourcePayload: sourcePayload({
+          format: 'qwen-code.legacy-logs.entry.v1',
+          sourcePath: filePath,
+          sourceFile: basename(filePath),
+          sourceSessionId: String(sessionRaw),
+          sourceMessageId: String(entry.messageId ?? i),
+          records: [{ index: i, entry }],
+          extra: { projectHash },
+        }),
       });
     }
 

@@ -57,6 +57,7 @@ export async function GET(request: Request) {
         contentBlocks: favoriteSnapshots.contentBlocks,
         usage: favoriteSnapshots.usage,
         metadata: favoriteSnapshots.metadata,
+        sourcePayload: favoriteSnapshots.sourcePayload,
         rawTimestamp: favoriteSnapshots.rawTimestamp,
         userNote: favoriteSnapshots.userNote,
         snapshottedAt: favoriteSnapshots.snapshottedAt,

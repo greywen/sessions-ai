@@ -20,6 +20,7 @@ import {
   type NormalizedFileEdit,
 } from './edit-normalizer.ts';
 import { logger } from '../logger.ts';
+import { sourcePayload } from './source-payload.ts';
 
 /**
  * CodeBuddy parser (Tencent Coding Copilot — `tencent-cloud.coding-copilot`).
@@ -99,8 +100,8 @@ function stringifyUnknown(value: unknown): string {
   }
 }
 
-function truncate(input: string, limit = 4000): string {
-  return input.length > limit ? `${input.slice(0, limit)}\n...[truncated]` : input;
+function preserveFullText(input: string): string {
+  return input;
 }
 
 function parseTimestampMs(ts: unknown): number {
@@ -269,7 +270,7 @@ function convertMessageContent(content: unknown): ContentBlock[] {
       }
     } else if (type === 'tool_result') {
       const text = stringifyUnknown(obj.content);
-      blocks.push(emptyBlock('ToolOutput', truncate(text)));
+      blocks.push(emptyBlock('ToolOutput', preserveFullText(text)));
     }
   }
   return blocks;
@@ -454,6 +455,18 @@ export class CodeBuddyParser implements ToolParser {
             sourceFile: basename(filePath),
             stub: true,
           },
+          sourcePayload: sourcePayload({
+            format: 'codebuddy.sessions-db.row.v1',
+            sourcePath: filePath,
+            sourceFile: basename(filePath),
+            sourceSessionId: conversationId,
+            sourceMessageId: conversationId,
+            records: [{
+              key: row.key,
+              row: meta,
+              rawValue: valueText,
+            }],
+          }),
         });
       }
     } catch (err) {
@@ -518,7 +531,7 @@ export class CodeBuddyParser implements ToolParser {
         continue;
       }
       if (!row) continue;
-      const built = this.buildMessageFromRow(row, conversationId, projectKey, lineNo);
+      const built = this.buildMessageFromRow(row, conversationId, projectKey, lineNo, filePath);
       if (built) messages.push(built);
     }
 
@@ -563,7 +576,7 @@ export class CodeBuddyParser implements ToolParser {
 
     for (let i = 0; i < arr.length; i++) {
       const row = arr[i] as CodeBuddyMessageRow;
-      const built = this.buildMessageFromRow(row, conversationId, projectKey, i);
+      const built = this.buildMessageFromRow(row, conversationId, projectKey, i, filePath);
       if (built) out.push(built);
     }
     return { messages: out, newOffset: st.size };
@@ -574,6 +587,7 @@ export class CodeBuddyParser implements ToolParser {
     conversationId: string,
     projectKey: string,
     lineNo: number,
+    filePath: string,
   ): UnifiedMessage | null {
     if (!row || typeof row !== 'object') return null;
     const role = mapRole(row.role);
@@ -595,12 +609,12 @@ export class CodeBuddyParser implements ToolParser {
           });
         }
         if (tc?.result !== undefined) {
-          blocks.push(emptyBlock('ToolOutput', truncate(stringifyUnknown(tc.result))));
+          blocks.push(emptyBlock('ToolOutput', preserveFullText(stringifyUnknown(tc.result))));
         }
       }
     }
     if (row.toolResult) {
-      blocks.push(emptyBlock('ToolOutput', truncate(stringifyUnknown(row.toolResult.output ?? row.toolResult))));
+      blocks.push(emptyBlock('ToolOutput', preserveFullText(stringifyUnknown(row.toolResult.output ?? row.toolResult))));
     }
 
     if (blocks.length === 0) return null;
@@ -621,6 +635,15 @@ export class CodeBuddyParser implements ToolParser {
         projectKey,
         sourceMessageId,
       },
+      sourcePayload: sourcePayload({
+        format: 'codebuddy.message-row.v1',
+        sourcePath: filePath,
+        sourceFile: basename(filePath),
+        sourceSessionId: conversationId,
+        sourceMessageId,
+        records: [{ lineNo, row }],
+        extra: { projectKey },
+      }),
     };
   }
 }

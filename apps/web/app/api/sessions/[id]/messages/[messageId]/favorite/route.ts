@@ -63,6 +63,7 @@ export async function PATCH(
         contentBlocks: normalizedMessages.contentBlocks,
         usage: normalizedMessages.usage,
         metadata: normalizedMessages.metadata,
+        sourcePayload: normalizedMessages.sourcePayload,
         rawTimestamp: normalizedMessages.rawTimestamp,
       })
       .from(normalizedMessages)
@@ -90,6 +91,7 @@ export async function PATCH(
         contentBlocks: src.contentBlocks ?? [],
         usage: src.usage ?? null,
         metadata: src.metadata ?? null,
+        sourcePayload: src.sourcePayload ?? null,
         rawTimestamp: src.rawTimestamp,
         userNote: data.note ?? null,
       })
@@ -101,6 +103,7 @@ export async function PATCH(
           contentBlocks: src.contentBlocks ?? [],
           usage: src.usage ?? null,
           metadata: src.metadata ?? null,
+          sourcePayload: src.sourcePayload ?? null,
           rawTimestamp: src.rawTimestamp,
           userNote: data.note ?? null,
           snapshottedAt: new Date(),

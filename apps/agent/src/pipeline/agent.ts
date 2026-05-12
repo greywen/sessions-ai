@@ -153,8 +153,8 @@ export class Agent {
       storeDir: this.cfg.dataDir,
       agentVersion: this.cfg.agentVersion,
     });
-    const authKey = await auth.ensureAuthorized(fp, this.cfg.registerMaxPolls);
-    logger.info({ key: maskKey(authKey) }, 'Authorization completed');
+    let currentAuthKey = await auth.ensureAuthorized(fp, this.cfg.registerMaxPolls);
+    logger.info({ key: maskKey(currentAuthKey) }, 'Authorization completed');
 
     // 2) initialize parsers
     const machineId = fp.fingerprint;
@@ -190,7 +190,7 @@ export class Agent {
 
     const uploader = new BatchUploader({
       serverUrl: this.cfg.serverUrl,
-      authKey,
+      authKey: currentAuthKey,
       fingerprint: fp.fingerprint,
       agentVersion: this.cfg.agentVersion,
       maxRetries: 10,
@@ -258,6 +258,15 @@ export class Agent {
       }
     };
 
+    // Keep uploader/config-sync auth state in sync. This also prevents a startup race:
+    // re-auth can happen before configSync is constructed (during initial upload),
+    // so configSync must be initialized from this mutable source of truth.
+    const applyAuthKey = (nextKey: string) => {
+      currentAuthKey = nextKey;
+      uploader.updateAuthKey(nextKey);
+      configSync?.updateAuthKey(nextKey);
+    };
+
     // 4) consume and upload loop
     let configSync: ConfigSync | null = null;
     let consuming = true;
@@ -276,8 +285,7 @@ export class Agent {
             try {
               auth.clearLocalKey();
               const refreshedAuthKey = await auth.ensureAuthorized(fp, this.cfg.registerMaxPolls);
-              uploader.updateAuthKey(refreshedAuthKey);
-              (configSync as ConfigSync | null)?.updateAuthKey(refreshedAuthKey);
+              applyAuthKey(refreshedAuthKey);
               logger.info({ key: maskKey(refreshedAuthKey) }, 'Re-authorization completed, retrying batch once');
               await uploader.uploadBatch(batch);
               continue;
@@ -363,7 +371,7 @@ export class Agent {
     //      apply them locally and report back.
     configSync = new ConfigSync({
       serverUrl: this.cfg.serverUrl,
-      authKey,
+      authKey: currentAuthKey,
       fingerprint: fp.fingerprint,
       pollIntervalSecs: this.cfg.configPollIntervalSecs,
     });

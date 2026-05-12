@@ -18,6 +18,7 @@ import {
   parseApplyPatch,
   type FileEditMeta,
 } from './edit-normalizer.ts';
+import { sourcePayload } from './source-payload.ts';
 
 const CODEX_NS = 'codex-ns-v1';
 
@@ -99,6 +100,17 @@ interface PendingFunctionCall {
   fileEditBlocks?: ContentBlock[];
 }
 
+function appendSourceRecord(
+  message: UnifiedMessage | undefined,
+  relation: string,
+  line: RolloutLine,
+): void {
+  const payload = message?.sourcePayload as { records?: unknown[] } | null | undefined;
+  if (!payload) return;
+  if (!Array.isArray(payload.records)) payload.records = [];
+  payload.records.push({ relation, line });
+}
+
 function setEditStatus(blocks: ContentBlock[] | undefined, status: FileEditMeta['status']): void {
   if (!blocks) return;
   for (const b of blocks) {
@@ -170,7 +182,7 @@ export class CodexParser implements ToolParser {
 
     const sessionMeta = this.extractSessionMeta(parsed, filePath);
     const sessionUuid = toUuidV5(`session:${sessionMeta.id}`);
-    const messages = this.buildMessages(parsed, sessionMeta, sessionUuid);
+    const messages = this.buildMessages(parsed, sessionMeta, sessionUuid, filePath);
 
     return { messages, newOffset: stat.size };
   }
@@ -203,6 +215,7 @@ export class CodexParser implements ToolParser {
     lines: RolloutLine[],
     meta: SessionMeta,
     sessionUuid: string,
+    filePath: string,
   ): UnifiedMessage[] {
     const sharedMeta: Record<string, unknown> = {
       sourceSessionId: meta.id,
@@ -218,6 +231,7 @@ export class CodexParser implements ToolParser {
     let lastAssistantId: string | null = null;
     let lastAssistantIndex: number = -1;
     let messageIndex = 0;
+    let lastTurnContextLine: RolloutLine | null = null;
     const pendingFunctionCalls = new Map<string, PendingFunctionCall>();
 
     const baseUsage = (model: string, totals: {
@@ -242,6 +256,7 @@ export class CodexParser implements ToolParser {
       if (ln.type === 'turn_context') {
         const model = typeof payload.model === 'string' ? payload.model : null;
         if (model) lastTurnContextModel = model;
+        lastTurnContextLine = ln;
         continue;
       }
 
@@ -272,6 +287,7 @@ export class CodexParser implements ToolParser {
             output: last.output_tokens,
             reasoning: last.reasoning_output_tokens,
           });
+          appendSourceRecord(messages[lastAssistantIndex], 'token_count', ln);
         }
         continue;
       }
@@ -307,6 +323,18 @@ export class CodexParser implements ToolParser {
           usage: null,
           timestamp: ts,
           metadata: { ...sharedMeta, model: lastTurnContextModel ?? 'unknown' },
+          sourcePayload: sourcePayload({
+            format: 'codex.rollout.v1',
+            sourcePath: filePath,
+            sourceFile: basename(filePath),
+            sourceSessionId: meta.id,
+            sourceMessageId: idSeed,
+            records: [
+              ...(lastTurnContextLine ? [{ relation: 'turn_context', line: lastTurnContextLine }] : []),
+              { relation: 'message', line: ln },
+            ],
+            extra: { sessionMeta: meta },
+          }),
         };
         messages.push(msg);
         if (role === 'assistant') {
@@ -329,6 +357,7 @@ export class CodexParser implements ToolParser {
           : '';
         if (summaryText && lastAssistantIndex >= 0) {
           messages[lastAssistantIndex].contentBlocks.unshift(emptyBlock('Thinking', summaryText));
+          appendSourceRecord(messages[lastAssistantIndex], 'reasoning', ln);
         }
         continue;
       }
@@ -373,6 +402,9 @@ export class CodexParser implements ToolParser {
           }
         }
 
+        if (lastAssistantIndex >= 0) {
+          appendSourceRecord(messages[lastAssistantIndex], 'function_call', ln);
+        }
         if (callId) pendingFunctionCalls.set(callId, pending);
         continue;
       }
@@ -408,21 +440,25 @@ export class CodexParser implements ToolParser {
           setEditStatus(pending.fileEditBlocks, failed ? 'failed' : 'applied');
           if (failed && lastAssistantIndex >= 0) {
             messages[lastAssistantIndex].contentBlocks.push({
-              ...emptyBlock('Error', output.length > 4000 ? `${output.slice(0, 4000)}\n…[truncated]` : output),
+              ...emptyBlock('Error', output),
               toolName: name,
             });
+          }
+          if (lastAssistantIndex >= 0) {
+            appendSourceRecord(messages[lastAssistantIndex], 'function_call_output', ln);
           }
           continue;
         }
 
         const block: ContentBlock = {
           ...emptyBlock(classifyToolName(name)),
-          content: output.length > 4000 ? `${output.slice(0, 4000)}\n…[truncated]` : output,
+          content: output,
           toolName: name,
           toolInput: parsedInput,
         };
         if (lastAssistantIndex >= 0) {
           messages[lastAssistantIndex].contentBlocks.push(block);
+          appendSourceRecord(messages[lastAssistantIndex], 'function_call_output', ln);
         }
         if (callId) pendingFunctionCalls.delete(callId);
         continue;
@@ -442,13 +478,13 @@ export class CodexParser implements ToolParser {
             });
           }
           if (stdout) {
-            const trimmed = stdout.length > 4000 ? `${stdout.slice(0, 4000)}\n…[truncated]` : stdout;
             messages[lastAssistantIndex].contentBlocks.push({
-              ...emptyBlock('ShellOutput', trimmed),
+              ...emptyBlock('ShellOutput', stdout),
               toolName: 'exec',
               exitCode,
             });
           }
+          appendSourceRecord(messages[lastAssistantIndex], 'exec_command_end', ln);
         }
         continue;
       }
@@ -469,6 +505,9 @@ export class CodexParser implements ToolParser {
               toolName: 'apply_patch',
             });
           }
+          if (lastAssistantIndex >= 0) {
+            appendSourceRecord(messages[lastAssistantIndex], 'patch_apply_end', ln);
+          }
           continue;
         }
         if (stdout && lastAssistantIndex >= 0) {
@@ -476,6 +515,7 @@ export class CodexParser implements ToolParser {
             ...emptyBlock('FileEdit', stdout),
             toolName: 'apply_patch',
           });
+          appendSourceRecord(messages[lastAssistantIndex], 'patch_apply_end', ln);
         }
         continue;
       }
@@ -485,6 +525,7 @@ export class CodexParser implements ToolParser {
         const text = typeof payload.message === 'string' ? payload.message : JSON.stringify(payload);
         if (lastAssistantIndex >= 0) {
           messages[lastAssistantIndex].contentBlocks.push(emptyBlock('Error', text));
+          appendSourceRecord(messages[lastAssistantIndex], 'error', ln);
         }
         continue;
       }
